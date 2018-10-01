@@ -77,25 +77,26 @@ def prep(df_image,hi_res_image):
     'to the script; it controls how much of the low surface brightness'
     'emission in the outskirts of galaxies is subtracted. This choice'
     'depends on the science application'
-    iraf.gauss('_fluxmod_cfht','_fluxmod_cfht_smoothed',1.5,nsigma=4.) ### nsigma=4
+    iraf.gauss('_fluxmod_cfht','_fluxmod_cfht_smoothed',2.5) ### nsigma=4
 
-    
-    iraf.imreplace('_fluxmod_cfht_smoothed', -1, lower=0, upper=0)
-    iraf.imreplace('_fluxmod_cfht_smoothed', 1, lower=-0.5)
-    iraf.imreplace('_fluxmod_cfht_smoothed', 0, upper=-0.5)
-    iraf.imarith('%s'%hi_res_image, '*','_fluxmod_cfht_smoothed', '_fluxmod_cfht_new')
-    
-    
+    '''
+    imreplace _fluxmod_cfht_rs -1 lower=0 upper=0
+    imreplace _fluxmod_cfht_rs 1 lower=-0.5
+    imreplace _fluxmod_cfht_rs 0 upper=-0.5
+    imarith _cfht_r * _fluxmod_cfht_rs _fluxmod_cfht_r_new
+    '''
+
+    '''
     # this is the key new step! we're registering the CFHT image
     #  to a frame that is 4x finer sampled than the Dragonfly image.
     # this avoids all the pixelation effects we had before. 
     #  (4x seems enough; but we could have it as a free parameter - need
     # to be careful as it occurs elsewhere in the scripts too) 
-    iraf.blkrep('%s'%df_image,'_df_4',4,4)
-    
+    blkrep _df_g _df_g4 4 4
+    '''
+
     'register the flux model onto the same pixel scale as the dragonfly image'
-#    iraf.wregister('_fluxmod_cfht_smoothed','%s'%df_image,'_fluxmod_dragonfly',interpo='linear',fluxcon='yes')
-    iraf.wregister('_fluxmod_cfht_new','_df_4','_fluxmod_dragonfly',interpo='linear',fluxcon='yes')
+    iraf.wregister('_fluxmod_cfht_smoothed','%s'%df_image,'_fluxmod_dragonfly',interpo='linear',fluxcon='yes')
 
     return None
 
@@ -197,4 +198,4 @@ if __name__ == '__main__':
         sys.exit()
     
     prep(df_image,hi_res_image)
-  ##   subract(df_image,psf)
+    subract(df_image,psf)
