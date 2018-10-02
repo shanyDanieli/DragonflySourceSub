@@ -102,10 +102,9 @@ def prep(df_image,hi_res_image):
 def subract(df_image,psf):
     iraf.imdel('_model*.fits')
     iraf.imdel('_res*.fits')
+    iraf.imdel('_psf*.fits')
     iraf.imdel('_df_sub')
     
-
-
     'subtract the sky value from the dragonfly image header'
     df_backval = fits.getheader(df_image)['BACKVAL']
     iraf.imarith('%s'%df_image,'-','%s'%df_backval,'_df_sub')
@@ -114,11 +113,19 @@ def subract(df_image,psf):
     if usemodelpsf:
         makeallisonspsf()
         psf = './psf/psf_static_fullframe.fits'
-    ### XXX resample the PSF by a factor of 4
-
+    else:
+        psf = './psf/_psf.fits'
     if verbose:
         print 'VERBOSE:  Using %s for the psf convolution.'%psf
-    iraf.stsdas.analysis.fourier.fconvolve('_fluxmod_dragonfly','%s'%psf,'_model')
+        
+    'resample the PSF by a factor of 4'
+    iraf.magnify('%s'%psf,'_psf_4',4,4,interp="spline3")
+    #  this is just to retain the same total flux in the psf
+    iraf.imarith('_psf_4','*',16.,'_psf_4')
+
+    iraf.stsdas.analysis.fourier.fconvolve('_fluxmod_dragonfly','_psf_4','_model_4')
+    
+    
     
     'shift the images so they have the same physical coordinates'
     iraf.stsdas.analysis.dither.crossdriz('_df_sub.fits','_model.fits','cc_images',dinp='no',dref='no')
