@@ -14,7 +14,7 @@ Options:
     -m, --usemodelpsf                           Use the model psf (produced via allison's code) [default: False]
     -l LOCATION, --locpsf LOCATION              Directory where the psf code is [default: /Users/deblokhorst/Documents/Dragonfly/git/]
 
-    -p PSF, --givenpsf PSF                      PSF  name  [default: None]
+    -p PSF, --givenpsf PSF                      PSF  name  [default: ./psf/_psf_g.fits]
 
 Examples:
 
@@ -113,8 +113,8 @@ def subract(df_image,psf):
     if usemodelpsf:
         makeallisonspsf()
         psf = './psf/psf_static_fullframe.fits'
-    else:
-        psf = './psf/_psf.fits'
+  #  else:
+  #      psf = './psf/_psf.fits'
     if verbose:
         print 'VERBOSE:  Using %s for the psf convolution.'%psf
         
@@ -125,7 +125,8 @@ def subract(df_image,psf):
 
     iraf.stsdas.analysis.fourier.fconvolve('_fluxmod_dragonfly','_psf_4','_model_4')
     
-    
+    # now after the convolution we can go back to the Dragonfly resolution
+    iraf.blkavg('_model_4','_model',4,4,option="average")
     
     'shift the images so they have the same physical coordinates'
     iraf.stsdas.analysis.dither.crossdriz('_df_sub.fits','_model.fits','cc_images',dinp='no',dref='no')
@@ -137,28 +138,72 @@ def subract(df_image,psf):
         x_shift = float(line[2])
         y_shift = float(line[4])
     print('The shift in x and y are: '+str(x_shift)+','+str(y_shift))
-    iraf.imshift('_model','_model_sh',0-x_shift,0-y_shift)
+    # OUR SCRIPT 
+    #####iraf.imshift('_model','_model_sh',0-x_shift,0-y_shift)
+    # 
+    
+    ##### FROM PIETER ## COMMENT THIS OUT UNLESS TESTING
+    iraf.imshift('_model','_model_sh',0.15,0.30)
+    #####
 
     'scale the model so that roughly the same as the _df_sub image'
-    if usemodelpsf:
-        iraf.imarith('_model_sh','/',16.,'_model_sc')  ## just trying to match it to the original (below) approximately
-    else:
-        iraf.imarith('_model_sh','/',2422535.2,'_model_sc')  ## difference between the flux of the star used to make the psf in both frames
+ ####   if usemodelpsf:
+ ####       iraf.imarith('_model_sh','/',16.,'_model_sc')  ## just trying to match it to the original (below) approximately
+ ####   else:
+ ####       iraf.imarith('_model_sh','/',2422535.2,'_model_sc')  ## difference between the flux of the star used to make the psf in both frames
 
-    iraf.imarith('_model_sc','*',1.5,'_model_sc')
+ ####   iraf.imarith('_model_sc','*',1.5,'_model_sc')
+
+#  And this is the photometric step, matching the images to each other
+# in principle this comes from the headers - both datasets are calibrated,
+#  to this multiplication should be something like 10^((ZP_DF - ZP_CFHT)/-2.5)
+# (perhaps with a correction for the difference in pixel size - depending
+#  on what wregister does - so another factor (PIX_SIZE_DF)^2/(PIX_SIZE_CFHT)^2
+#  we can also measure it
+# again, I think having this factor be part of the parameters that are
+#  used to call the script is probably best - as it really should follow
+# from known information (so have the 3.7e-6 in the next line be an
+#   input parameter)
+    ##### FROM PIETER ## COMMENT THIS OUT UNLESS TESTING
+    iraf.imarith('_model_gsh','*',3.70e-6,'_model_sc')
+    #####
+
+    iraf.imdel('_df_ga.fits')
+    
+    # next is a correction for the smoothing that was applied to the CFHT
+    #  data in the prep script -but I'm not actually sure this is right!
+    iraf.gauss('%s'%df_image,'_df_ga',0.45)
+
+    iraf.imarith('_df_ga','-','_model_sc','_res')
 
     'subtract the model frm the dragonfly cutout'
-    iraf.imarith('_df_sub','-','_model_sc','_res')
+    ##### iraf.imarith('_df_sub','-','_model_sc','_res')
 
-    '????'
+
+    # next is for g band
+    iraf.imcopy('_res','_res_org')
+
+    iraf.imdel('_model_mask')
+    iraf.imdel('_model_maskb')
+    
     iraf.imcopy('_model_sc','_model_mask')
-    iraf.imreplace('_model_mask.fits',0,upper=50)
-    iraf.imreplace('_model_mask.fits',1,lower=0.01)
+    iraf.imreplace('_model_mask.fits',0,upper=0.04)
+    iraf.imreplace('_model_mask.fits',1,lower=0.005)
     iraf.boxcar('_model_mask','_model_maskb',5,5)
     iraf.imreplace('_model_maskb.fits',1,lower=0.1)
     iraf.imreplace('_model_maskb.fits',0,upper=0.9)
     iraf.imarith(1,'-','_model_maskb','_model_maskb')
     iraf.imarith('_model_maskb','*','_res','_res_final')
+    
+    '????'
+  #####  iraf.imcopy('_model_sc','_model_mask')
+  #####  iraf.imreplace('_model_mask.fits',0,upper=50)
+  #####  iraf.imreplace('_model_mask.fits',1,lower=0.01)
+  #####  iraf.boxcar('_model_mask','_model_maskb',5,5)
+  #####  iraf.imreplace('_model_maskb.fits',1,lower=0.1)
+  #####  iraf.imreplace('_model_maskb.fits',0,upper=0.9)
+  #####  iraf.imarith(1,'-','_model_maskb','_model_maskb')
+  #####  iraf.imarith('_model_maskb','*','_res','_res_final')
 
     return None
 
@@ -204,4 +249,4 @@ if __name__ == '__main__':
         sys.exit()
     
     prep(df_image,hi_res_image)
-  ##   subract(df_image,psf)
+  #  subract(df_image,psf)
