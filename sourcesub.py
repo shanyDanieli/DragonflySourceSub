@@ -61,9 +61,10 @@ def upsample(inimage,outimage,factor=2):
 
     return None
 
-def prep(df_image,hi_res_image):
+def prep(df_image,hi_res_image,width=1.5):
     'run SExtractor to get bright sources that are easily detected in the high resolution data'
-    ##### DEB: Can choose to run sextractor more or less aggressively
+    
+    #####  option to change sex threshold 
     subprocess.call('sex %s' %hi_res_image,shell=True)
     'copy the segmentation map to a mask'
     iraf.imcopy('seg.fits','_mask.fits')
@@ -71,14 +72,15 @@ def prep(df_image,hi_res_image):
     iraf.imreplace('_mask.fits',1,lower=0.5)
     'multiply the mask (with 1s at the stars) by the high res image to get the star flux back - now have the flux model'
     iraf.imarith('_mask.fits','*','%s'%hi_res_image,'_fluxmod_cfht')
+    
     'smooth the flux model'
     'increase size of mask, so more is subtracted'
     'the "1.5" in the next line should be a user-defined parameter that is given'
     'to the script; it controls how much of the low surface brightness'
     'emission in the outskirts of galaxies is subtracted. This choice'
     'depends on the science application'
-    iraf.gauss('_fluxmod_cfht','_fluxmod_cfht_smoothed',1.5,nsigma=4.) ### nsigma=4
-
+    #####  option to provide width for the threshold 
+    iraf.gauss('_fluxmod_cfht','_fluxmod_cfht_smoothed',width,nsigma=4.)
     
     iraf.imreplace('_fluxmod_cfht_smoothed', -1, lower=0, upper=0)
     iraf.imreplace('_fluxmod_cfht_smoothed', 1, lower=-0.5)
@@ -86,65 +88,68 @@ def prep(df_image,hi_res_image):
     iraf.imarith('%s'%hi_res_image, '*','_fluxmod_cfht_smoothed', '_fluxmod_cfht_new')
     
     
-    # this is the key new step! we're registering the CFHT image
-    #  to a frame that is 4x finer sampled than the Dragonfly image.
-    # this avoids all the pixelation effects we had before. 
-    #  (4x seems enough; but we could have it as a free parameter - need
-    # to be careful as it occurs elsewhere in the scripts too) 
+    ' this is the key new step! we"re registering the CFHT image'
+    ' to a frame that is 4x finer sampled than the Dragonfly image.'
+    ' this avoids all the pixelation effects we had before.'
+    '  (4x seems enough; but we could have it as a free parameter - need'
+    ' to be careful as it occurs elsewhere in the scripts too) '
     iraf.blkrep('%s'%df_image,'_df_4',4,4)
     
     'register the flux model onto the same pixel scale as the dragonfly image'
-#    iraf.wregister('_fluxmod_cfht_smoothed','%s'%df_image,'_fluxmod_dragonfly',interpo='linear',fluxcon='yes')
     iraf.wregister('_fluxmod_cfht_new','_df_4','_fluxmod_dragonfly',interpo='linear',fluxcon='yes')
 
     return None
 
-def subract(df_image,psf):
-    iraf.imdel('_model*.fits')
+def subract(df_image,psf,shifts=None):
+##    iraf.imdel('_model*.fits')
     iraf.imdel('_res*.fits')
-    iraf.imdel('_psf*.fits')
-    iraf.imdel('_df_sub')
+##    iraf.imdel('_psf*.fits')
+##    iraf.imdel('_df_sub')
     
     'subtract the sky value from the dragonfly image header'
-    df_backval = fits.getheader(df_image)['BACKVAL']
-    iraf.imarith('%s'%df_image,'-','%s'%df_backval,'_df_sub')
+  #####  df_backval = fits.getheader(df_image)['BACKVAL']
+  #####  iraf.imarith('%s'%df_image,'-','%s'%df_backval,'_df_sub')
 
     'convolve the model with the Dragonfly PSF'
     if usemodelpsf:
         makeallisonspsf()
         psf = './psf/psf_static_fullframe.fits'
-  #  else:
-  #      psf = './psf/_psf.fits'
+        
     if verbose:
         print 'VERBOSE:  Using %s for the psf convolution.'%psf
         
     'resample the PSF by a factor of 4'
-    iraf.magnify('%s'%psf,'_psf_4',4,4,interp="spline3")
-    #  this is just to retain the same total flux in the psf
-    iraf.imarith('_psf_4','*',16.,'_psf_4')
+##    iraf.magnify('%s'%psf,'_psf_4',4,4,interp="spline3")
+    
+    'this is just to retain the same total flux in the psf'
+##    iraf.imarith('_psf_4','*',16.,'_psf_4')
 
-    iraf.stsdas.analysis.fourier.fconvolve('_fluxmod_dragonfly','_psf_4','_model_4')
+##    iraf.stsdas.analysis.fourier.fconvolve('_fluxmod_dragonfly','_psf_4','_model_4')
     
     # now after the convolution we can go back to the Dragonfly resolution
-    iraf.blkavg('_model_4','_model',4,4,option="average")
+##    iraf.blkavg('_model_4','_model',4,4,option="average")
+    
+    iraf.imdel('cc_images')
     
     'shift the images so they have the same physical coordinates'
-    iraf.stsdas.analysis.dither.crossdriz('_df_sub.fits','_model.fits','cc_images',dinp='no',dref='no')
-    iraf.stsdas.analysis.dither.shiftfind('cc_images.fits','shift_values')
-    x_shift=0
-    y_shift=0
-    with open('shift_values','r') as datafile:
-        line = datafile.read().split()
-        x_shift = float(line[2])
-        y_shift = float(line[4])
-    print('The shift in x and y are: '+str(x_shift)+','+str(y_shift))
-    # OUR SCRIPT 
-    #####iraf.imshift('_model','_model_sh',0-x_shift,0-y_shift)
-    # 
-    
-    ##### FROM PIETER ## COMMENT THIS OUT UNLESS TESTING
-    iraf.imshift('_model','_model_sh',0.15,0.30)
-    #####
+    if shifts is None:
+        iraf.stsdas.analysis.dither.crossdriz('_df_g.fits','_model.fits','cc_images',dinp='no',dref='no')
+        #####iraf.stsdas.analysis.dither.crossdriz('_df_sub.fits','_model.fits','cc_images',dinp='no',dref='no')
+        iraf.stsdas.analysis.dither.shiftfind('cc_images.fits','shift_values')
+        x_shift=0
+        y_shift=0
+        with open('shift_values','r') as datafile:
+            line = datafile.read().split()
+            x_shift = float(line[2])
+            y_shift = float(line[4])
+        print('The shift in x and y are: '+str(x_shift)+','+str(y_shift))
+         
+        iraf.imdel('_model_sh')
+        iraf.imdel('_model_sc')
+        iraf.imshift('_model','_model_sh',0-x_shift,0-y_shift)
+    else:
+        # for M101: 0.15,0.30
+        iraf.imshift('_model','_model_sh',shifts[0],shifts[1])
 
     'scale the model so that roughly the same as the _df_sub image'
  ####   if usemodelpsf:
@@ -154,18 +159,18 @@ def subract(df_image,psf):
 
  ####   iraf.imarith('_model_sc','*',1.5,'_model_sc')
 
-#  And this is the photometric step, matching the images to each other
-# in principle this comes from the headers - both datasets are calibrated,
-#  to this multiplication should be something like 10^((ZP_DF - ZP_CFHT)/-2.5)
-# (perhaps with a correction for the difference in pixel size - depending
-#  on what wregister does - so another factor (PIX_SIZE_DF)^2/(PIX_SIZE_CFHT)^2
-#  we can also measure it
-# again, I think having this factor be part of the parameters that are
-#  used to call the script is probably best - as it really should follow
-# from known information (so have the 3.7e-6 in the next line be an
-#   input parameter)
+    #  And this is the photometric step, matching the images to each other
+    # in principle this comes from the headers - both datasets are calibrated,
+    #  to this multiplication should be something like 10^((ZP_DF - ZP_CFHT)/-2.5)
+    # (perhaps with a correction for the difference in pixel size - depending
+    #  on what wregister does - so another factor (PIX_SIZE_DF)^2/(PIX_SIZE_CFHT)^2
+    #  we can also measure it
+    # again, I think having this factor be part of the parameters that are
+    #  used to call the script is probably best - as it really should follow
+    # from known information (so have the 3.7e-6 in the next line be an
+    #   input parameter)
     ##### FROM PIETER ## COMMENT THIS OUT UNLESS TESTING
-    iraf.imarith('_model_gsh','*',3.70e-6,'_model_sc')
+    iraf.imarith('_model_sh','*',3.70e-6,'_model_sc')
     #####
 
     iraf.imdel('_df_ga.fits')
@@ -181,12 +186,12 @@ def subract(df_image,psf):
 
 
     # next is for g band
-    iraf.imcopy('_res','_res_org')
+    iraf.imcopy('_res.fits','_res_org.fits')
 
     iraf.imdel('_model_mask')
     iraf.imdel('_model_maskb')
     
-    iraf.imcopy('_model_sc','_model_mask')
+    iraf.imcopy('_model_sc.fits','_model_mask.fits')
     iraf.imreplace('_model_mask.fits',0,upper=0.04)
     iraf.imreplace('_model_mask.fits',1,lower=0.005)
     iraf.boxcar('_model_mask','_model_maskb',5,5)
@@ -248,5 +253,7 @@ if __name__ == '__main__':
         print 'ERROR: If not using a model psf from Allisons code, need to specify the name of the psf fits file to be used.\n'
         sys.exit()
     
-    prep(df_image,hi_res_image)
-  #  subract(df_image,psf)
+    #####  read a file here with the parameters
+    
+  #  prep(df_image,hi_res_image,width=width)
+    subract(df_image,psf)
