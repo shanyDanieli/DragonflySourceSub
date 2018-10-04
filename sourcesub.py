@@ -86,7 +86,6 @@ def prep(df_image,hi_res_image,width_mask=1.5):
     iraf.imreplace('_fluxmod_cfht_smoothed', 0, upper=-0.5)
     iraf.imarith('%s'%hi_res_image, '*','_fluxmod_cfht_smoothed', '_fluxmod_cfht_new')
     
-    
     ' this is the key new step! we"re registering the CFHT image'
     ' to a frame that is 4x finer sampled than the Dragonfly image.'
     ' this avoids all the pixelation effects we had before.'
@@ -150,7 +149,6 @@ def subract(df_image,psf,shifts=None,photosc=3.70e-6,width_cfhtsm=0.45,upperlim=
         iraf.imdel('_model_sc')
         iraf.imshift('_model','_model_sh',0-x_shift,0-y_shift)
     else:
-        # for M101: 0.15,0.30
         iraf.imshift('_model','_model_sh',shifts[0],shifts[1])
 
     'scale the model so that roughly the same as the _df_sub image'
@@ -163,10 +161,6 @@ def subract(df_image,psf,shifts=None,photosc=3.70e-6,width_cfhtsm=0.45,upperlim=
         'so this multiplication should be something like 10^((ZP_DF - ZP_CFHT)/-2.5)'
         '(perhaps with a correction for the difference in pixel size - depending'
         'on what wregister does - so another factor (PIX_SIZE_DF)^2/(PIX_SIZE_CFHT)^2'
-        """
-        NGC4565: 1.5/2422535.2 (difference between the flux of the star used to make the psf in both frames)
-        M101: 3.70e-6
-        """
         iraf.imarith('_model_sh','*',photosc,'_model_sc')
 
     iraf.imdel('_df_ga.fits')
@@ -182,15 +176,6 @@ def subract(df_image,psf,shifts=None,photosc=3.70e-6,width_cfhtsm=0.45,upperlim=
 
     iraf.imdel('_model_mask')
     iraf.imdel('_model_maskb')
-    
-    """
-    NGC4565:
-    upperlim = 50
-    lowerlim = 0.01
-    M101:
-    upperlim = 0.04
-    lowerlim = 0.005
-    """
     
     ##### How do we decide on all these values??
     iraf.imcopy('_model_sc.fits','_model_mask.fits')
@@ -246,6 +231,24 @@ if __name__ == '__main__':
         sys.exit()
     
     #####  read a file here with the parameters
+    """
+    NGC4565:
+    upperlim = 50
+    lowerlim = 0.01
+    photosc = 1.5/2422535.2(difference between the flux of the star used to make the psf in both frames)
+    shifts = None
+    width_cfhtsm = 0
+    width_mask = 1.5
     
-  #  prep(df_image,hi_res_image,width=width)
-    subract(df_image,psf)
+    M101:
+    upperlim = 0.04
+    lowerlim = 0.005
+    photosc = 3.70e-6
+    shifts = [0.15,0.30]
+    width_cfhtsm = 0.45
+    width_mask = 1.5
+    """
+
+    ##### somehow pass the parameters to the functions, but how to automatically use defaults if not included in the parameter file?
+  #  prep(df_image,hi_res_image,width_mask=width_mask)
+    subract(df_image,psf,shifts=None,photosc=photosc,width_cfhtsm=width_cfhtsm,upperlim=upperlim,lowerlim=lowerlim)
