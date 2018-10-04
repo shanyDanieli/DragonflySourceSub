@@ -61,10 +61,10 @@ def upsample(inimage,outimage,factor=2):
 
     return None
 
-def prep(df_image,hi_res_image,width=1.5):
+def prep(df_image,hi_res_image,width_mask=1.5):
     'run SExtractor to get bright sources that are easily detected in the high resolution data'
     
-    #####  option to change sex threshold 
+    #####  option to change sex threshold??
     subprocess.call('sex %s' %hi_res_image,shell=True)
     'copy the segmentation map to a mask'
     iraf.imcopy('seg.fits','_mask.fits')
@@ -79,8 +79,7 @@ def prep(df_image,hi_res_image,width=1.5):
     'to the script; it controls how much of the low surface brightness'
     'emission in the outskirts of galaxies is subtracted. This choice'
     'depends on the science application'
-    #####  option to provide width for the threshold 
-    iraf.gauss('_fluxmod_cfht','_fluxmod_cfht_smoothed',width,nsigma=4.)
+    iraf.gauss('_fluxmod_cfht','_fluxmod_cfht_smoothed',width_mask,nsigma=4.)
     
     iraf.imreplace('_fluxmod_cfht_smoothed', -1, lower=0, upper=0)
     iraf.imreplace('_fluxmod_cfht_smoothed', 1, lower=-0.5)
@@ -100,16 +99,20 @@ def prep(df_image,hi_res_image,width=1.5):
 
     return None
 
-def subract(df_image,psf,shifts=None):
+def subract(df_image,psf,shifts=None,photosc=3.70e-6,width_cfhtsm=0.45,upperlim=0.04,lowerlim=0.005):
 ##    iraf.imdel('_model*.fits')
     iraf.imdel('_res*.fits')
 ##    iraf.imdel('_psf*.fits')
 ##    iraf.imdel('_df_sub')
     
     'subtract the sky value from the dragonfly image header'
-  #####  df_backval = fits.getheader(df_image)['BACKVAL']
-  #####  iraf.imarith('%s'%df_image,'-','%s'%df_backval,'_df_sub')
-
+    try:
+        df_backval = fits.getheader(df_image)['BACKVAL']
+        iraf.imarith('%s'%df_image,'-','%s'%df_backval,'_df_sub')
+    except:
+        print "WARNING: No BACKVAL to subtract!  Skipping the background subtraction..."
+        iraf.imcopy('%s'%df_image,'_df_sub.fits')
+        
     'convolve the model with the Dragonfly PSF'
     if usemodelpsf:
         makeallisonspsf()
@@ -133,8 +136,7 @@ def subract(df_image,psf,shifts=None):
     
     'shift the images so they have the same physical coordinates'
     if shifts is None:
-        iraf.stsdas.analysis.dither.crossdriz('_df_g.fits','_model.fits','cc_images',dinp='no',dref='no')
-        #####iraf.stsdas.analysis.dither.crossdriz('_df_sub.fits','_model.fits','cc_images',dinp='no',dref='no')
+        iraf.stsdas.analysis.dither.crossdriz('_df_sub.fits','_model.fits','cc_images',dinp='no',dref='no')
         iraf.stsdas.analysis.dither.shiftfind('cc_images.fits','shift_values')
         x_shift=0
         y_shift=0
@@ -152,63 +154,53 @@ def subract(df_image,psf,shifts=None):
         iraf.imshift('_model','_model_sh',shifts[0],shifts[1])
 
     'scale the model so that roughly the same as the _df_sub image'
- ####   if usemodelpsf:
- ####       iraf.imarith('_model_sh','/',16.,'_model_sc')  ## just trying to match it to the original (below) approximately
- ####   else:
- ####       iraf.imarith('_model_sh','/',2422535.2,'_model_sc')  ## difference between the flux of the star used to make the psf in both frames
-
- ####   iraf.imarith('_model_sc','*',1.5,'_model_sc')
-
-    #  And this is the photometric step, matching the images to each other
-    # in principle this comes from the headers - both datasets are calibrated,
-    #  to this multiplication should be something like 10^((ZP_DF - ZP_CFHT)/-2.5)
-    # (perhaps with a correction for the difference in pixel size - depending
-    #  on what wregister does - so another factor (PIX_SIZE_DF)^2/(PIX_SIZE_CFHT)^2
-    #  we can also measure it
-    # again, I think having this factor be part of the parameters that are
-    #  used to call the script is probably best - as it really should follow
-    # from known information (so have the 3.7e-6 in the next line be an
-    #   input parameter)
-    ##### FROM PIETER ## COMMENT THIS OUT UNLESS TESTING
-    iraf.imarith('_model_sh','*',3.70e-6,'_model_sc')
-    #####
+    if usemodelpsf:
+        iraf.imarith('_model_sh','/',16.,'_model_sc')
+    else:
+        ##### Change this so using the zeropoint to calculate, or have as option??
+        'the photometric step, matching the images to each other. '
+        'in principle this comes from the headers - both datasets are calibrated,'
+        'so this multiplication should be something like 10^((ZP_DF - ZP_CFHT)/-2.5)'
+        '(perhaps with a correction for the difference in pixel size - depending'
+        'on what wregister does - so another factor (PIX_SIZE_DF)^2/(PIX_SIZE_CFHT)^2'
+        """
+        NGC4565: 1.5/2422535.2 (difference between the flux of the star used to make the psf in both frames)
+        M101: 3.70e-6
+        """
+        iraf.imarith('_model_sh','*',photosc,'_model_sc')
 
     iraf.imdel('_df_ga.fits')
     
-    # next is a correction for the smoothing that was applied to the CFHT
-    #  data in the prep script -but I'm not actually sure this is right!
-    iraf.gauss('%s'%df_image,'_df_ga',0.45)
+    ' correction for the smoothing that was applied to the CFHT'
+    ##### Change so default is width = 0??
+    iraf.gauss('%s'%df_image,'_df_ga',width_cfhtsm)
 
+    'subtract the model from the dragonfly cutout'
     iraf.imarith('_df_ga','-','_model_sc','_res')
 
-    'subtract the model frm the dragonfly cutout'
-    ##### iraf.imarith('_df_sub','-','_model_sc','_res')
-
-
-    # next is for g band
     iraf.imcopy('_res.fits','_res_org.fits')
 
     iraf.imdel('_model_mask')
     iraf.imdel('_model_maskb')
     
+    """
+    NGC4565:
+    upperlim = 50
+    lowerlim = 0.01
+    M101:
+    upperlim = 0.04
+    lowerlim = 0.005
+    """
+    
+    ##### How do we decide on all these values??
     iraf.imcopy('_model_sc.fits','_model_mask.fits')
-    iraf.imreplace('_model_mask.fits',0,upper=0.04)
-    iraf.imreplace('_model_mask.fits',1,lower=0.005)
+    iraf.imreplace('_model_mask.fits',0,upper=upperlim)
+    iraf.imreplace('_model_mask.fits',1,lower=lowerlim)
     iraf.boxcar('_model_mask','_model_maskb',5,5)
     iraf.imreplace('_model_maskb.fits',1,lower=0.1)
     iraf.imreplace('_model_maskb.fits',0,upper=0.9)
     iraf.imarith(1,'-','_model_maskb','_model_maskb')
     iraf.imarith('_model_maskb','*','_res','_res_final')
-    
-    '????'
-  #####  iraf.imcopy('_model_sc','_model_mask')
-  #####  iraf.imreplace('_model_mask.fits',0,upper=50)
-  #####  iraf.imreplace('_model_mask.fits',1,lower=0.01)
-  #####  iraf.boxcar('_model_mask','_model_maskb',5,5)
-  #####  iraf.imreplace('_model_maskb.fits',1,lower=0.1)
-  #####  iraf.imreplace('_model_maskb.fits',0,upper=0.9)
-  #####  iraf.imarith(1,'-','_model_maskb','_model_maskb')
-  #####  iraf.imarith('_model_maskb','*','_res','_res_final')
 
     return None
 
@@ -245,7 +237,7 @@ if __name__ == '__main__':
         print arguments
     
     if usemodelpsf:
-        print '\nNOTE: Using model psf from Allisons code\n'
+        print '\nNOTE: Using model psf from Allisons code (assuming in path: %s)\n'%locpsf
     else:
         print '\nNOTE: Using cutout of star from dragonfly image as psf - need to have cutout named %s in directory or will crash.\n'%psf
         
