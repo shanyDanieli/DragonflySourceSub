@@ -64,7 +64,7 @@ def upsample(inimage,outimage,factor=2):
 def prep(df_image,hi_res_image,width_mask=1.5):
     'run SExtractor to get bright sources that are easily detected in the high resolution data'
     
-    #####  option to change sex threshold??
+    #####  Add in option to change sextractor threshold
     subprocess.call('sex %s' %hi_res_image,shell=True)
     'copy the segmentation map to a mask'
     iraf.imcopy('seg.fits','_mask.fits')
@@ -99,10 +99,10 @@ def prep(df_image,hi_res_image,width_mask=1.5):
     return None
 
 def subract(df_image,psf,shifts=None,photosc=3.70e-6,width_cfhtsm=0.45,upperlim=0.04,lowerlim=0.005):
-##    iraf.imdel('_model*.fits')
+    iraf.imdel('_model*.fits')
     iraf.imdel('_res*.fits')
-##    iraf.imdel('_psf*.fits')
-##    iraf.imdel('_df_sub')
+    iraf.imdel('_psf*.fits')
+    iraf.imdel('_df_sub')
     
     'subtract the sky value from the dragonfly image header'
     try:
@@ -112,6 +112,8 @@ def subract(df_image,psf,shifts=None,photosc=3.70e-6,width_cfhtsm=0.45,upperlim=
         print "WARNING: No BACKVAL to subtract!  Skipping the background subtraction..."
         iraf.imcopy('%s'%df_image,'_df_sub.fits')
         
+    ##### subtract the background from the cfht image?
+    
     'convolve the model with the Dragonfly PSF'
     if usemodelpsf:
         makeallisonspsf()
@@ -121,15 +123,15 @@ def subract(df_image,psf,shifts=None,photosc=3.70e-6,width_cfhtsm=0.45,upperlim=
         print 'VERBOSE:  Using %s for the psf convolution.'%psf
         
     'resample the PSF by a factor of 4'
-##    iraf.magnify('%s'%psf,'_psf_4',4,4,interp="spline3")
+    iraf.magnify('%s'%psf,'_psf_4',4,4,interp="spline3")
     
     'this is just to retain the same total flux in the psf'
-##    iraf.imarith('_psf_4','*',16.,'_psf_4')
+    iraf.imarith('_psf_4','*',16.,'_psf_4')
 
-##    iraf.stsdas.analysis.fourier.fconvolve('_fluxmod_dragonfly','_psf_4','_model_4')
+    iraf.stsdas.analysis.fourier.fconvolve('_fluxmod_dragonfly','_psf_4','_model_4')
     
-    # now after the convolution we can go back to the Dragonfly resolution
-##    iraf.blkavg('_model_4','_model',4,4,option="average")
+    'now after the convolution we can go back to the Dragonfly resolution'
+    iraf.blkavg('_model_4','_model',4,4,option="average")
     
     iraf.imdel('cc_images')
     
@@ -155,7 +157,7 @@ def subract(df_image,psf,shifts=None,photosc=3.70e-6,width_cfhtsm=0.45,upperlim=
     if usemodelpsf:
         iraf.imarith('_model_sh','/',16.,'_model_sc')
     else:
-        ##### Change this so using the zeropoint to calculate, or have as option??
+        ##### Change this so using the zeropoint to calculate photosc, or have as option??
         'the photometric step, matching the images to each other. '
         'in principle this comes from the headers - both datasets are calibrated,'
         'so this multiplication should be something like 10^((ZP_DF - ZP_CFHT)/-2.5)'
@@ -166,7 +168,7 @@ def subract(df_image,psf,shifts=None,photosc=3.70e-6,width_cfhtsm=0.45,upperlim=
     iraf.imdel('_df_ga.fits')
     
     ' correction for the smoothing that was applied to the CFHT'
-    ##### Change so default is width = 0??
+    ##### Change so default is width_cfhtsm = 0??
     iraf.gauss('%s'%df_image,'_df_ga',width_cfhtsm)
 
     'subtract the model from the dragonfly cutout'
@@ -230,7 +232,7 @@ if __name__ == '__main__':
         print 'ERROR: If not using a model psf from Allisons code, need to specify the name of the psf fits file to be used.\n'
         sys.exit()
     
-    #####  read a file here with the parameters
+    #####  Add in reading a file here with the parameters 
     """
     NGC4565:
     upperlim = 50
@@ -249,6 +251,8 @@ if __name__ == '__main__':
     width_mask = 1.5
     """
 
-    ##### somehow pass the parameters to the functions, but how to automatically use defaults if not included in the parameter file?
+    ##### Go through the column with 0/1 to determine which to pass the defaults instead of user values
+    
+    
   #  prep(df_image,hi_res_image,width_mask=width_mask)
-    subract(df_image,psf,shifts=None,photosc=photosc,width_cfhtsm=width_cfhtsm,upperlim=upperlim,lowerlim=lowerlim)
+    subract(df_image,psf,shifts=shifts,photosc=photosc,width_cfhtsm=width_cfhtsm,upperlim=upperlim,lowerlim=lowerlim)
