@@ -158,6 +158,8 @@ def subract(df_image,psf,shifts=None,photosc=3.70e-6,width_cfhtsm=0.45,upperlim=
         iraf.imarith('_model_sh','/',16.,'_model_sc')
     else:
         ##### Change this so using the zeropoint to calculate photosc, or have as option??
+        if photosc is None:
+            print 'Calculate photosc from zeropoints and such'
         'the photometric step, matching the images to each other. '
         'in principle this comes from the headers - both datasets are calibrated,'
         'so this multiplication should be something like 10^((ZP_DF - ZP_CFHT)/-2.5)'
@@ -237,7 +239,7 @@ if __name__ == '__main__':
     NGC4565:
     upperlim = 50
     lowerlim = 0.01
-    photosc = 1.5/2422535.2(difference between the flux of the star used to make the psf in both frames)
+    photosc = 1.5/2422535.2 (difference between the flux of the star used to make the psf in both frames)
     shifts = None
     width_cfhtsm = 0
     width_mask = 1.5
@@ -252,7 +254,15 @@ if __name__ == '__main__':
     """
 
     ##### Go through the column with 0/1 to determine which to pass the defaults instead of user values
+    default_dict = {'photosc':None,'upperlim':0.04,'lowerlim':0.005,'shifts':[0,0],
+                    'width_cfhtsm':0, 'width_mask':1.5}
     
-    
+    ##### something like this?
+    for default_param,file_param,file_column in default_dict,file_params,file_columns:
+        if file_column == 0:
+            param_dict[param] = default_param
+        else:
+            param_dict[param] = file_param
+        
   #  prep(df_image,hi_res_image,width_mask=width_mask)
     subract(df_image,psf,shifts=shifts,photosc=photosc,width_cfhtsm=width_cfhtsm,upperlim=upperlim,lowerlim=lowerlim)
