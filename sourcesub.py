@@ -9,8 +9,6 @@ Options:
     -h, --help                                  Show this screen
     -v, --verbose                               Show extra information [default: False]    
 
-    -u, --upsample                              Upsample the dragonfly image and psf [default: False]
-
     -m, --usemodelpsf                           Use the model psf (produced via allison's code) [default: False]
     -l LOCATION, --locpsf LOCATION              Directory where the psf code is [default: /Users/deblokhorst/Documents/Dragonfly/git/]
 
@@ -191,32 +189,69 @@ def run_SExtractor(imagename,detect_thresh=10):
 
 
 def getphotosc(model,df):
-	catname = run_SExtractor(df,detect_thresh=3)
-	cat = ascii.read(catname)
-	flux = cat['FLUX_AUTO']
-	x = cat['X_IMAGE']
-	y = cat['Y_IMAGE']
-	median_flux = np.median(np.asarray(flux))
+    'run source extractor to find the stars'
+    catname = run_SExtractor(df,detect_thresh=3)
+    
+    'read in the sextractor catalogue to pick out some sources'
+    cat = ascii.read(catname)
+    flux = np.array(cat['FLUX_AUTO'])
+    x = np.array(cat['X_IMAGE'])
+    y = np.array(cat['Y_IMAGE'])
+    median_flux = np.median(flux)
+    
+    #print np.transpose([flux,x,y]).tolist()
+    #print median_flux
+    
+    'pick out some number (numsources) of sources with fluxes close to the median flux'
+    numsources = 10
+    diff = 0.005
+    flux_nearby = flux[(flux < (median_flux+diff)) & (flux > (median_flux-diff))]
+    #print len(flux_nearby)
+    while len(flux_nearby) < numsources:
+        diff = diff+0.005
+        flux_nearby = flux[(flux < (median_flux+diff)) & (flux > (median_flux-diff))]
+        #print len(flux_nearby)
+    print 'Selected %s sources with flux close to the median -- within flux range of %s to %s'%(len(flux_nearby),median_flux-diff,median_flux+diff)
+    x_nearby = x[(flux < (median_flux+diff)) & (flux > (median_flux-diff))]
+    y_nearby = y[(flux < (median_flux+diff)) & (flux > (median_flux-diff))]
+    #print np.transpose([flux_nearby,x_nearby,y_nearby])
+    
+    'write the locations to a region file (to display in ds9)'
+    f = open('photoscsources.reg','w')
+    f.write('global color=blue dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n')
+    f.write('Image\n\n')
+    for i in range(len(x_nearby)): 
+        f.write('point('+str(x_nearby[i])+','+str(y_nearby[i])+') # point=circle\n')
+    f.close()
 
-	x_cut = []
-	y_cut = []
-	flux_cut = []
+    #plt.hist(flux,bins=1000)
+    #plt.axvline(x=median_flux,c='r')
+    #plt.xlim(-1,10)
+    #plt.show()
+    #plt.close()
+    
+    'open the files'
+    df_data = fits.getdata(df)
+    model_data = fits.getdata(model)
+    
+    'find the standard deviations in 5x5 pixels centered on the sources we selected from the Dragonfly image in both that image and the model'
+    stdev_df = []
+    stdev_model = []
+    radius=2
+    for i in range(len(x_nearby)):
+        bounds = [int(round(x_nearby[i])-radius),int(round(x_nearby[i])+radius+1),int(round(y_nearby[i])-radius),int(round(y_nearby[i])+radius+1)]
+        print "bounds:"
+        print bounds
+        print df_data[bounds[2]:bounds[3],bounds[0]:bounds[1]] ### I think that x and y are switched...?
+        stdev_df.append(np.std(df_data[bounds[2]:bounds[3],bounds[0]:bounds[1]]))
+        stdev_model.append(np.std(model_data[bounds[2]:bounds[3],bounds[0]:bounds[1]]))
+                
+    print stdev_df
+    print stdev_model
+    
+    quit()
 
-	for i in range(len(flux)):
-		if flux[i] < median_flux
-
-
-	print(median)
-
-	plt.hist(flux,bins=1000)
-	plt.axvline(x=median,c='r')
-	plt.show()
-	plt.close()
-	quit()
-
-
-
-	return photosc
+    return photosc
 
 
 def writeFITS(im,header,saveas):
@@ -226,16 +261,6 @@ def writeFITS(im,header,saveas):
     hdulist = fits.HDUList([hdu])
     hdulist.writeto(saveas,overwrite=True)
     hdulist.close()
-
-    return None
-    
-def upsample(inimage,outimage,factor=2):
-    data,header = fits.getdata(inimage,header=True)
-    data_upsample = block_replicate(data,factor)
-    header['NAXIS1'] = header['NAXIS1']*factor
-    header['NAXIS2'] = header['NAXIS2']*factor
-    header['comment'] = 'Data was upsampled from original image, %s, by factor of %s'%(inimage,factor)
-    writeFITS(data_upsample,header,outimage)
 
     return None
 
@@ -399,7 +424,6 @@ if __name__ == '__main__':
     # Non-mandatory options without arguments
     verbose = arguments['--verbose']
     usemodelpsf = arguments['--usemodelpsf']
-    doupsample = arguments['--upsample']
     
     # Non-mandatory options with arguments
     psf = arguments['--givenpsf']
