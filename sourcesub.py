@@ -3,7 +3,7 @@
 """starsub.py -- subtract the stars from a dragonfly image using a high resolution image (e.g. cfht) to identify and model stars
 
 Usage:
-    starsub [-h] [-v] [-u] [-m] [-l LOCATION] [-p PSF] <dragonflyimagename> <highresimagename>
+    starsub [-h] [-v] [-u] [-m] [-l LOCATION] [-p PSF] <dragonflyimagename> <highresimagename> <paramfile>
 
 Options:
     -h, --help                                  Show this screen
@@ -216,6 +216,7 @@ if __name__ == '__main__':
     # Mandatory argument
     df_image = arguments['<dragonflyimagename>']
     hi_res_image = arguments['<highresimagename>']
+    parameters_file = arguments['<paramfile>']
     
     # Non-mandatory options without arguments
     verbose = arguments['--verbose']
@@ -238,6 +239,7 @@ if __name__ == '__main__':
         print 'ERROR: If not using a model psf from Allisons code, need to specify the name of the psf fits file to be used.\n'
         sys.exit()
     
+
     #####  Add in reading a file here with the parameters 
     '''
     NGC4565:
@@ -264,25 +266,30 @@ if __name__ == '__main__':
     # pix_size_cfht = 0.187
     # photosc = 1/(10**((zp_df-zp_cfht)/(-2.5))*pix_size_df**2/(pix_size_cfht**2))
 
-    # inFile = sys.argv[1]
-    # print('reading parameters file..')
-    # with open(inFile,'r') as i:
-    #     lines = i.readlines()
-    # print('finished loading parameters!')
-    # for ind in range(0,len(lines)):
-    #     result.append(lines[ind].split('='))
-    # user_input = [float(result[x][1]) for x in range(len(lines))]
-    
-    # N_stars = int(user_input[0]) # number of stars in the galaxy
-    # distance = user_input[1] # distance of the galaxy in Mpc
-    # sersic_param = [user_input[2],user_input[3],user_input[4],user_input[5],user_input[6],user_input[7]]
-    # r_eff = user_input[2] # effective radius in arcsec
-    # n = user_input[3]
-    # x_0 = user_input[4]
-    # y_0 = user_input[5]
-    # ellip = user_input[6]
-    # theta = user_input[7]
 
+    user_parameters = []
+    use_or_not = []
+    with open(parameters_file,'r') as i:
+        lines = i.readlines()
+    for ind in range(7,len(lines)):
+    	line = lines[ind]
+    	user_parameters.append(float(line.split('\t')[0]))
+    	use_or_not.append(int(line.split('\t')[1]))
+
+
+    default_param = [0.04, 0.005, 0.15, 0.30, 0.45, 1.5]
+    parameters_to_use = np.asarray(default_param)
+    
+    for i in range(len(default_param)):
+    	if use_or_not[i] == 1:
+    		parameters_to_use[i] = user_parameters[i]
+
+
+    upperlim = parameters_to_use[0]
+    lowerlim = parameters_to_use[1]
+    shifts = [parameters_to_use[2],parameters_to_use[3]]
+    width_cfhtsm = parameters_to_use[4]
+    width_mask = parameters_to_use[5]
 
     '''
     ##### Go through the column with 0/1 to determine which to pass the defaults instead of user values
