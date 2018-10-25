@@ -67,6 +67,10 @@ def prep(df_image,hi_res_image,width_mask=1.5):
     #####  Add in option to change sextractor threshold
     subprocess.call('sex %s' %hi_res_image,shell=True)
     'copy the segmentation map to a mask'
+    iraf.imdel('_mask.fits')
+    iraf.imdel('_fluxmod_cfht*.fits')
+    iraf.imdel('_df_4*.fits')
+
     iraf.imcopy('seg.fits','_mask.fits')
     'replace the values in the segments in the segmentation map (i.e. stars) all to 1, all the background is still 0'
     iraf.imreplace('_mask.fits',1,lower=0.5)
@@ -80,7 +84,7 @@ def prep(df_image,hi_res_image,width_mask=1.5):
     'emission in the outskirts of galaxies is subtracted. This choice'
     'depends on the science application'
     iraf.gauss('_fluxmod_cfht','_fluxmod_cfht_smoothed',width_mask,nsigma=4.)
-    
+
     iraf.imreplace('_fluxmod_cfht_smoothed', -1, lower=0, upper=0)
     iraf.imreplace('_fluxmod_cfht_smoothed', 1, lower=-0.5)
     iraf.imreplace('_fluxmod_cfht_smoothed', 0, upper=-0.5)
@@ -235,7 +239,7 @@ if __name__ == '__main__':
         sys.exit()
     
     #####  Add in reading a file here with the parameters 
-    """
+    '''
     NGC4565:
     upperlim = 50
     lowerlim = 0.01
@@ -243,16 +247,44 @@ if __name__ == '__main__':
     shifts = None
     width_cfhtsm = 0
     width_mask = 1.5
-    
-    M101:
+    '''
+
+    # M101:
     upperlim = 0.04
     lowerlim = 0.005
-    photosc = 3.70e-6
+    # photosc = 3.70e-6
+    photosc = 3.5891251918438935e-06
     shifts = [0.15,0.30]
     width_cfhtsm = 0.45
     width_mask = 1.5
-    """
 
+    # zp_df = 19.8545
+    # zp_cfht = 30.0
+    # pix_size_df = 2.5
+    # pix_size_cfht = 0.187
+    # photosc = 1/(10**((zp_df-zp_cfht)/(-2.5))*pix_size_df**2/(pix_size_cfht**2))
+
+    # inFile = sys.argv[1]
+    # print('reading parameters file..')
+    # with open(inFile,'r') as i:
+    #     lines = i.readlines()
+    # print('finished loading parameters!')
+    # for ind in range(0,len(lines)):
+    #     result.append(lines[ind].split('='))
+    # user_input = [float(result[x][1]) for x in range(len(lines))]
+    
+    # N_stars = int(user_input[0]) # number of stars in the galaxy
+    # distance = user_input[1] # distance of the galaxy in Mpc
+    # sersic_param = [user_input[2],user_input[3],user_input[4],user_input[5],user_input[6],user_input[7]]
+    # r_eff = user_input[2] # effective radius in arcsec
+    # n = user_input[3]
+    # x_0 = user_input[4]
+    # y_0 = user_input[5]
+    # ellip = user_input[6]
+    # theta = user_input[7]
+
+
+    '''
     ##### Go through the column with 0/1 to determine which to pass the defaults instead of user values
     default_dict = {'photosc':None,'upperlim':0.04,'lowerlim':0.005,'shifts':[0,0],
                     'width_cfhtsm':0, 'width_mask':1.5}
@@ -263,6 +295,7 @@ if __name__ == '__main__':
             param_dict[param] = default_param
         else:
             param_dict[param] = file_param
+    '''
         
-  #  prep(df_image,hi_res_image,width_mask=width_mask)
+    prep(df_image,hi_res_image,width_mask=width_mask)
     subract(df_image,psf,shifts=shifts,photosc=photosc,width_cfhtsm=width_cfhtsm,upperlim=upperlim,lowerlim=lowerlim)
