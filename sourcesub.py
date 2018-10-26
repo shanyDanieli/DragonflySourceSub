@@ -188,30 +188,32 @@ def run_SExtractor(imagename,detect_thresh=10):
 
 
 
-def getphotosc(model,df):
+def getphotosc(model,df,xmin=100,xmax=500,ymin=100,ymax=500,numsources=50):
     'run source extractor to find the stars'
     catname = run_SExtractor(df,detect_thresh=3)
     
     'read in the sextractor catalogue to pick out some sources'
     cat = ascii.read(catname)
-    flux = np.array(cat['FLUX_AUTO'])
-    x = np.array(cat['X_IMAGE'])
-    y = np.array(cat['Y_IMAGE'])
-    median_flux = np.median(flux)
+    flux_orig = np.array(cat['FLUX_AUTO'])
+    x_orig = np.array(cat['X_IMAGE'])
+    y_orig = np.array(cat['Y_IMAGE'])
     
+    'restrict the values to an inner section (since the cfht image is smaller than dragonfly)'
+    flux = flux_orig[(x_orig<500)&(x_orig>100)&(y_orig<500)&(y_orig>100)]
+    x = x_orig[(x_orig<500)&(x_orig>100)&(y_orig<500)&(y_orig>100)]
+    y = y_orig[(x_orig<500)&(x_orig>100)&(y_orig<500)&(y_orig>100)]
+    median_flux = np.median(flux)
     #print np.transpose([flux,x,y]).tolist()
-    #print median_flux
     
     'pick out some number (numsources) of sources with fluxes close to the median flux'
-    numsources = 10
     diff = 0.005
     flux_nearby = flux[(flux < (median_flux+diff)) & (flux > (median_flux-diff))]
-    #print len(flux_nearby)
     while len(flux_nearby) < numsources:
         diff = diff+0.005
         flux_nearby = flux[(flux < (median_flux+diff)) & (flux > (median_flux-diff))]
-        #print len(flux_nearby)
-    print 'Selected %s sources with flux close to the median -- within flux range of %s to %s'%(len(flux_nearby),median_flux-diff,median_flux+diff)
+    if verbose:
+        print_verbose_string('Selected %s sources with flux close to the median (%s) -- within flux range of %s to %s'%
+                                (len(flux_nearby),median_flux,median_flux-diff,median_flux+diff)) 
     x_nearby = x[(flux < (median_flux+diff)) & (flux > (median_flux-diff))]
     y_nearby = y[(flux < (median_flux+diff)) & (flux > (median_flux-diff))]
     #print np.transpose([flux_nearby,x_nearby,y_nearby])
@@ -240,18 +242,21 @@ def getphotosc(model,df):
     radius=2
     for i in range(len(x_nearby)):
         bounds = [int(round(x_nearby[i])-radius),int(round(x_nearby[i])+radius+1),int(round(y_nearby[i])-radius),int(round(y_nearby[i])+radius+1)]
-        print "bounds:"
-        print bounds
-        print df_data[bounds[2]:bounds[3],bounds[0]:bounds[1]] ### I think that x and y are switched...?
         stdev_df.append(np.std(df_data[bounds[2]:bounds[3],bounds[0]:bounds[1]]))
         stdev_model.append(np.std(model_data[bounds[2]:bounds[3],bounds[0]:bounds[1]]))
-                
-    print stdev_df
-    print stdev_model
+    photosc = np.array(stdev_df)/np.array(stdev_model)
+    avgphotosc = np.mean(photosc)
+    #print stdev_df
+    #print stdev_model
+    #print photosc
     
-    quit()
+    'check for any outliers (in case, e.g. the cfht image is smaller than the cutout we took)'
+    
+    if verbose:
+        print_verbose_string('The average photosc from %s sources is %s.'%(len(photosc),avgphotosc))
+        print_verbose_string('The median photosc from %s sources is %s.'%(len(photosc),np.median(photosc)))
 
-    return photosc
+    return avgphotosc
 
 
 def writeFITS(im,header,saveas):
@@ -364,14 +369,14 @@ def subract(df_image,psf,shifts=None,photosc=3.70e-6,width_cfhtsm=0.45,upperlim=
     if usemodelpsf:
         iraf.imarith('_model_sh','/',16.,'_model_sc')
     else:
-        ##### Change this so using the zeropoint to calculate photosc, or have as option??
-        if photosc is None:
-            print 'Calculate photosc from zeropoints and such'
         'the photometric step, matching the images to each other. '
         'in principle this comes from the headers - both datasets are calibrated,'
         'so this multiplication should be something like 10^((ZP_DF - ZP_CFHT)/-2.5)'
         '(perhaps with a correction for the difference in pixel size - depending'
         'on what wregister does - so another factor (PIX_SIZE_DF)^2/(PIX_SIZE_CFHT)^2'
+        
+        photosc = getphotosc('_model_sh.fits',df_image)
+        print 'photosc: %s'%photosc
         iraf.imarith('_model_sh','*',photosc,'_model_sc')
 
     iraf.imdel('_df_ga.fits')
@@ -488,19 +493,15 @@ if __name__ == '__main__':
     	if use_or_not[i] == 1:
     		parameters_to_use[i] = user_parameters[i]
 
-
     upperlim = parameters_to_use[0]
     lowerlim = parameters_to_use[1]
     shifts = [parameters_to_use[2],parameters_to_use[3]]
     width_cfhtsm = parameters_to_use[4]
     width_mask = parameters_to_use[5]
+    
+  #  photosc = getphotosc('_model_sh.fits',df_image)
+  #  print photosc
+  #  quit()
 
-
-
-    getphotosc(df_image,df_image)
-   
-    quit()
-
-        
-    prep(df_image,hi_res_image,width_mask=width_mask)
+    #prep(df_image,hi_res_image,width_mask=width_mask)
     subract(df_image,psf,shifts=shifts,photosc=photosc,width_cfhtsm=width_cfhtsm,upperlim=upperlim,lowerlim=lowerlim)
