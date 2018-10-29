@@ -3,7 +3,7 @@
 """starsub.py -- subtract the stars from a dragonfly image using a high resolution image (e.g. cfht) to identify and model stars
 
 Usage:
-    starsub [-h] [-v] [-u] [-m] [-l LOCATION] [-p PSF] [-s LOC] <dragonflyimagename> <highresimagename> <paramfile>
+    starsub [-h] [-v] [-m] [-u UPPERLIMIT] [-l LOCATION] [-p PSF] [-s LOC] <dragonflyimagename> <highresimagename> <paramfile>
 
 Options:
     -h, --help                                  Show this screen
@@ -11,6 +11,7 @@ Options:
 
     -m, --usemodelpsf                           Use the model psf (produced via allison's code) [default: False]
     -l LOCATION, --locpsf LOCATION              Directory where the psf code is [default: /Users/deblokhorst/Documents/Dragonfly/git/]
+    -u UPPERLIMIT, --upperlimit UPPERLIMIT      Uses a different upper limit for the final masking   [default: None]
 
     -p PSF, --givenpsf PSF                      PSF  name  [default: ./psf/_psf_g.fits]
     -s LOC, --sexloc LOC                    	Location of SExtractor executable						[default: /usr/local/bin/sex]
@@ -154,6 +155,7 @@ def run_SExtractor(imagename,detect_thresh=10):
     'Output ascii catalog name and seg map name'
     catname = re.sub('.fits','.cat',imagename)
     segname = re.sub('.fits','_seg.fits',imagename)
+    rmsname = re.sub('.fits','_rms.fits',imagename)
 
     if verbose:
         verbose_type = 'NORMAL'
@@ -177,8 +179,60 @@ def run_SExtractor(imagename,detect_thresh=10):
     if verbose:
         print_verbose_string('SExtracting... ')
 
-    SExtract_command = sexloc +' -c {config} -CATALOG_NAME {catalog} -CHECKIMAGE_TYPE SEGMENTATION -CHECKIMAGE_NAME {seg} {image}'.format(config=sextractor_config_name,catalog=catname,seg=segname,image=imagename)
+    SExtract_command = sexloc +' -c {config} -CATALOG_NAME {catalog} -CHECKIMAGE_TYPE SEGMENTATION,BACKGROUND_RMS -CHECKIMAGE_NAME {seg},{rms} {image}'.format(config=sextractor_config_name,catalog=catname,seg=segname,rms=rmsname,image=imagename)
+    print('command: ' + str(SExtract_command))
     subprocess.call(SExtract_command,shell=True)
+
+    'Clean up'
+    for fname in [sextractor_config_name,params_name,nnw_name,conv_name]:
+        cleanit(fname)
+
+    return catname
+
+
+def run_SExtractor_dual(modelname,imagename,detect_thresh=10):
+    'Names and storage directory of required config files'
+    sextractor_config_name = './pipetmp/scamp.sex'
+    params_name = './pipetmp/scamp.param'
+    nnw_name = './pipetmp/default.nnw'
+    conv_name = './pipetmp/default.conv'
+    mkdirp('./pipetmp')
+
+    'Output ascii catalog name and seg map name'
+    catname = re.sub('.fits','.cat',imagename)
+    segname = re.sub('.fits','_seg.fits',imagename)
+
+    if verbose:
+        verbose_type = 'NORMAL'
+    else:
+        verbose_type = 'QUIET'
+
+    'Stick content in config files'
+    configs = zip([sextractor_config_name,params_name,conv_name,nnw_name],[sextractor_config,sextractor_params,default_conv,default_nnw])
+    for fname,fcontent in configs:
+        fout = open(fname,'w')
+
+        if 'scamp.sex' in fname:
+            fout.write(fcontent.format(filter_name=conv_name,parameters_name=params_name,
+                                       starnnw_name=nnw_name,verbose_type=verbose_type,
+                                       detect_thresh=detect_thresh,pixel_scale=2.5))
+        else:
+            fout.write(fcontent)
+
+        fout.close()
+
+    if verbose:
+        print_verbose_string('SExtracting... ')
+
+    SExtract_command = sexloc +' -c {config} -CATALOG_NAME {catalog} -CHECKIMAGE_TYPE SEGMENTATION -CHECKIMAGE_NAME {seg} {model},{image}'.format(config=sextractor_config_name,catalog=catname,seg=segname,model=modelname,image=imagename)
+    print(SExtract_command)
+    subprocess.call(SExtract_command,shell=True)
+    
+    print('-------------------')
+    print(SExtract_command)    
+    print('catalog name :'+str(catname))
+    print('-------------------')
+
 
     'Clean up'
     for fname in [sextractor_config_name,params_name,nnw_name,conv_name]:
@@ -189,34 +243,50 @@ def run_SExtractor(imagename,detect_thresh=10):
 
 
 def getphotosc(model,df,xmin=100,xmax=500,ymin=100,ymax=500,numsources=50):
-    'run source extractor to find the stars'
-    catname = run_SExtractor(df,detect_thresh=3)
+
+    # 'run source extractor on the Dragonfly image to get the noise (rms) map'
+    # run_SExtractor(df,detect_thresh=3)
+    # quit()
+    # 'run in dual mode with the rms map from the dragonfly image'
+    # catname_model = run_SExtractor_dual(model,model,detect_thresh=3)
+    # catname_df = run_SExtractor_dual(model,df,detect_thresh=3)
+
+    catname_model = run_SExtractor_dual(df,df,detect_thresh=3)
+    catname_df = run_SExtractor_dual(df,model,detect_thresh=3)
+
     
-    'read in the sextractor catalogue to pick out some sources'
-    cat = ascii.read(catname)
-    flux_orig = np.array(cat['FLUX_AUTO'])
-    x_orig = np.array(cat['X_IMAGE'])
-    y_orig = np.array(cat['Y_IMAGE'])
+    'read in the sextractor catalogue from the df run, to pick out some sources'
+    cat_df = ascii.read(catname_df)
+    flux_df = np.array(cat_df['FLUX_AUTO'])
+    x_df = np.array(cat_df['X_IMAGE'])
+    y_df = np.array(cat_df['Y_IMAGE'])
+
+    'read in the sextractor catalogue from the model run, to pick out some sources'
+    cat_model = ascii.read(catname_model)
+    flux_model = np.array(cat_model['FLUX_AUTO'])
     
-    'restrict the values to an inner section (since the cfht image is smaller than dragonfly)'
-    flux = flux_orig[(x_orig<500)&(x_orig>100)&(y_orig<500)&(y_orig>100)]
-    x = x_orig[(x_orig<500)&(x_orig>100)&(y_orig<500)&(y_orig>100)]
-    y = y_orig[(x_orig<500)&(x_orig>100)&(y_orig<500)&(y_orig>100)]
-    median_flux = np.median(flux)
-    #print np.transpose([flux,x,y]).tolist()
+    # 'restrict the values to an inner section (since the cfht image is smaller than dragonfly)'
+    # flux_df = flux_orig[(x_orig<500)&(x_orig>100)&(y_orig<500)&(y_orig>100)]
+    # x = x_orig[(x_orig<500)&(x_orig>100)&(y_orig<500)&(y_orig>100)]
+    # y = y_orig[(x_orig<500)&(x_orig>100)&(y_orig<500)&(y_orig>100)]
+    # median_flux = np.median(flux)
+    # #print np.transpose([flux,x,y]).tolist()
     
     'pick out some number (numsources) of sources with fluxes close to the median flux'
     diff = 0.005
-    flux_nearby = flux[(flux < (median_flux+diff)) & (flux > (median_flux-diff))]
-    while len(flux_nearby) < numsources:
+    median_flux = np.median(flux_df)
+    flux_df_nearby = flux_df[(flux_df < (median_flux+diff)) & (flux_df > (median_flux-flux_df))]
+    while len(flux_df_nearby) < numsources:
         diff = diff+0.005
-        flux_nearby = flux[(flux < (median_flux+diff)) & (flux > (median_flux-diff))]
+        flux_df_nearby = flux_df[(flux_df < (median_flux+diff)) & (flux_df > (median_flux-diff))]
     if verbose:
         print_verbose_string('Selected %s sources with flux close to the median (%s) -- within flux range of %s to %s'%
-                                (len(flux_nearby),median_flux,median_flux-diff,median_flux+diff)) 
-    x_nearby = x[(flux < (median_flux+diff)) & (flux > (median_flux-diff))]
-    y_nearby = y[(flux < (median_flux+diff)) & (flux > (median_flux-diff))]
-    #print np.transpose([flux_nearby,x_nearby,y_nearby])
+                                (len(flux_df_nearby),median_flux,median_flux-diff,median_flux+diff)) 
+    x_nearby = x_df[(flux_df < (median_flux+diff)) & (flux_df > (median_flux-diff))]
+    y_nearby = y_df[(flux_df < (median_flux+diff)) & (flux_df > (median_flux-diff))]
+    flux_model_nearby = flux_model[(flux_df < (median_flux+diff)) & (flux_df > (median_flux-diff))]
+
+    #print np.transpose([flux_df_nearby,x_nearby,y_nearby])
     
     'write the locations to a region file (to display in ds9)'
     f = open('photoscsources.reg','w')
@@ -232,20 +302,29 @@ def getphotosc(model,df,xmin=100,xmax=500,ymin=100,ymax=500,numsources=50):
     #plt.show()
     #plt.close()
     
-    'open the files'
-    df_data = fits.getdata(df)
-    model_data = fits.getdata(model)
+    print('flux_df_nearby')
+    print(flux_df_nearby)
+    print('flux_model_nearby')
+    print(flux_model_nearby)
+
+    flux_ratio = flux_df_nearby/flux_model_nearby
+    avgphotosc = np.mean(flux_ratio)
+    medianphotosc = np.median(flux_ratio)
+
+    # 'open the files'
+    # df_data = fits.getdata(df)
+    # model_data = fits.getdata(model)
     
-    'find the standard deviations in 5x5 pixels centered on the sources we selected from the Dragonfly image in both that image and the model'
-    stdev_df = []
-    stdev_model = []
-    radius=2
-    for i in range(len(x_nearby)):
-        bounds = [int(round(x_nearby[i])-radius),int(round(x_nearby[i])+radius+1),int(round(y_nearby[i])-radius),int(round(y_nearby[i])+radius+1)]
-        stdev_df.append(np.std(df_data[bounds[2]:bounds[3],bounds[0]:bounds[1]]))
-        stdev_model.append(np.std(model_data[bounds[2]:bounds[3],bounds[0]:bounds[1]]))
-    photosc = np.array(stdev_df)/np.array(stdev_model)
-    avgphotosc = np.mean(photosc)
+    # 'find the standard deviations in 5x5 pixels centered on the sources we selected from the Dragonfly image in both that image and the model'
+    # stdev_df = []
+    # stdev_model = []
+    # radius=2
+    # for i in range(len(x_nearby)):
+    #     bounds = [int(round(x_nearby[i])-radius),int(round(x_nearby[i])+radius+1),int(round(y_nearby[i])-radius),int(round(y_nearby[i])+radius+1)]
+    #     stdev_df.append(np.std(df_data[bounds[2]:bounds[3],bounds[0]:bounds[1]]))
+    #     stdev_model.append(np.std(model_data[bounds[2]:bounds[3],bounds[0]:bounds[1]]))
+    # photosc = np.array(stdev_df)/np.array(stdev_model)
+    # avgphotosc = np.mean(photosc)
     #print stdev_df
     #print stdev_model
     #print photosc
@@ -253,10 +332,10 @@ def getphotosc(model,df,xmin=100,xmax=500,ymin=100,ymax=500,numsources=50):
     'check for any outliers (in case, e.g. the cfht image is smaller than the cutout we took)'
     
     if verbose:
-        print_verbose_string('The average photosc from %s sources is %s.'%(len(photosc),avgphotosc))
-        print_verbose_string('The median photosc from %s sources is %s.'%(len(photosc),np.median(photosc)))
+        print_verbose_string('The average photosc from %s sources is %s.'%(len(flux_ratio),avgphotosc))
+        print_verbose_string('The median photosc from %s sources is %s.'%(len(flux_ratio),medianphotosc))
 
-    return avgphotosc
+    return 1./avgphotosc
 
 
 def writeFITS(im,header,saveas):
@@ -310,7 +389,8 @@ def prep(df_image,hi_res_image,width_mask=1.5):
 
     return None
 
-def subract(df_image,psf,shifts=None,photosc=3.70e-6,width_cfhtsm=0.45,upperlim=0.04,lowerlim=0.005):
+# def subract(df_image,psf,shifts=None,photosc=3.70e-6,width_cfhtsm=0.45,upperlim=0.04,lowerlim=0.005):
+def subract(df_image,psf,shifts=None,width_cfhtsm=0.45,upperlim=0.04,lowerlim=0.005):
     iraf.imdel('_model*.fits')
     iraf.imdel('_res*.fits')
     iraf.imdel('_psf*.fits')
@@ -405,6 +485,26 @@ def subract(df_image,psf,shifts=None,photosc=3.70e-6,width_cfhtsm=0.45,upperlim=
 
     return None
 
+def mask(res_org,upperlim=0.04):
+    upperlim = float(upperlim)
+    lowerlim_opt = upperlim/2
+
+    iraf.imdel('_res_final.fits')
+    iraf.imdel('_model_mask')
+    iraf.imdel('_model_maskb')
+    
+    iraf.imcopy('_model_sc.fits','_model_mask.fits')
+    iraf.imreplace('_model_mask.fits',0,upper=upperlim)
+    iraf.imreplace('_model_mask.fits',1,lower=lowerlim_opt)
+    iraf.boxcar('_model_mask','_model_maskb',5,5)
+    iraf.imreplace('_model_maskb.fits',1,lower=0.1)
+    iraf.imreplace('_model_maskb.fits',0,upper=0.9)
+    iraf.imarith(1,'-','_model_maskb','_model_maskb')
+    iraf.imarith('_model_maskb','*',res_org,'_res_final')
+
+    return None
+
+
 def makeallisonspsf():
     subprocess.call('mkdir -p ./psf',shell=True)
     if os.path.isfile('./psf/SloanG.CENTRALPSF.cube.fits') is False:
@@ -429,6 +529,7 @@ if __name__ == '__main__':
     # Non-mandatory options without arguments
     verbose = arguments['--verbose']
     usemodelpsf = arguments['--usemodelpsf']
+    upperlim_opt = arguments['--upperlimit']
     
     # Non-mandatory options with arguments
     psf = arguments['--givenpsf']
@@ -459,14 +560,15 @@ if __name__ == '__main__':
     width_mask = 1.5
     '''
 
+
     # M101:
-    upperlim = 0.04
-    lowerlim = 0.005
+    # upperlim = 0.04
+    # lowerlim = 0.005
     # photosc = 3.70e-6
-    photosc = 3.5891251918438935e-06
-    shifts = [0.15,0.30]
-    width_cfhtsm = 0.45
-    width_mask = 1.5
+    # photosc = 3.5891251918438935e-06
+    # shifts = [0.15,0.30]
+    # width_cfhtsm = 0.45
+    # width_mask = 1.5
 
     # zp_df = 19.8545
     # zp_cfht = 30.0
@@ -474,8 +576,7 @@ if __name__ == '__main__':
     # pix_size_cfht = 0.187
     # photosc = 1/(10**((zp_df-zp_cfht)/(-2.5))*pix_size_df**2/(pix_size_cfht**2))
 
-
-    # Reading parameters from the user
+    'Reading parameters from the user'
     user_parameters = []
     use_or_not = []
     with open(parameters_file,'r') as i:
@@ -498,10 +599,26 @@ if __name__ == '__main__':
     shifts = [parameters_to_use[2],parameters_to_use[3]]
     width_cfhtsm = parameters_to_use[4]
     width_mask = parameters_to_use[5]
-    
-  #  photosc = getphotosc('_model_sh.fits',df_image)
-  #  print photosc
-  #  quit()
+   
 
-    #prep(df_image,hi_res_image,width_mask=width_mask)
-    subract(df_image,psf,shifts=shifts,photosc=photosc,width_cfhtsm=width_cfhtsm,upperlim=upperlim,lowerlim=lowerlim)
+    # if upperlim is None:
+    #     prep(df_image,hi_res_image,width_mask=width_mask)
+    #     subract(df_image,psf,shifts=shifts,photosc=photosc,width_cfhtsm=width_cfhtsm,upperlim=upperlim,lowerlim=lowerlim)
+    # else:
+    #     print 'Only performing the mask on the residual image .\n'
+    #     mask('_res_org.fits',upperlim=upperlim)
+        
+    # print(upperlim_opt)
+    # mask('_res_org.fits',upperlim=upperlim_opt)
+
+    prep(df_image,hi_res_image,width_mask=width_mask)
+    # subract(df_image,psf,shifts=shifts,photosc=photosc,width_cfhtsm=width_cfhtsm,upperlim=upperlim,lowerlim=lowerlim)
+    subract(df_image,psf,shifts=shifts,width_cfhtsm=width_cfhtsm,upperlim=upperlim,lowerlim=lowerlim)
+
+
+    # photosc = getphotosc('_model_sh.fits',df_image)
+  #  print photosc
+    # quit()
+
+    
+    
