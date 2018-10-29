@@ -11,7 +11,7 @@ Options:
 
     -m, --usemodelpsf                           Use the model psf (produced via allison's code) [default: False]
     -l LOCATION, --locpsf LOCATION              Directory where the psf code is [default: /Users/deblokhorst/Documents/Dragonfly/git/]
-    -u UPPERLIMIT, --upperlimit UPPERLIMIT      Uses a different upper limit for the final masking   [default: None]
+    -u UPPERLIMIT, --upperlimit UPPERLIMIT      Uses a different upper limit for the final masking   [default: False]
 
     -p PSF, --givenpsf PSF                      PSF  name  [default: ./psf/_psf_g.fits]
     -s LOC, --sexloc LOC                    	Location of SExtractor executable						[default: /usr/local/bin/sex]
@@ -394,7 +394,7 @@ def prep(df_image,hi_res_image,width_mask=1.5):
     return None
 
 # def subract(df_image,psf,shifts=None,photosc=3.70e-6,width_cfhtsm=0.45,upperlim=0.04,lowerlim=0.005):
-def subract(df_image,psf,shifts=None,width_cfhtsm=0.45,upperlim=0.04,lowerlim=0.005):
+def subract(df_image,psf,shifts=99.99,width_cfhtsm=0.45,upperlim=0.04,lowerlim=0.005):
     iraf.imdel('_model*.fits')
     iraf.imdel('_res*.fits')
     iraf.imdel('_psf*.fits')
@@ -432,7 +432,8 @@ def subract(df_image,psf,shifts=None,width_cfhtsm=0.45,upperlim=0.04,lowerlim=0.
     iraf.imdel('cc_images')
     
     'shift the images so they have the same physical coordinates'
-    if shifts is None:
+    if shifts[0]==99.99:
+        print('Calculating shifts...')
         iraf.stsdas.analysis.dither.crossdriz('_df_sub.fits','_model.fits','cc_images',dinp='no',dref='no')
         iraf.stsdas.analysis.dither.shiftfind('cc_images.fits','shift_values')
         x_shift=0
@@ -459,7 +460,7 @@ def subract(df_image,psf,shifts=None,width_cfhtsm=0.45,upperlim=0.04,lowerlim=0.
         '(perhaps with a correction for the difference in pixel size - depending'
         'on what wregister does - so another factor (PIX_SIZE_DF)^2/(PIX_SIZE_CFHT)^2'
         
-        photosc = getphotosc('_model_sh.fits',df_image)
+        photosc = getphotosc('_model_sh.fits','_df_sub.fits')
         print 'photosc: %s'%photosc
         iraf.imarith('_model_sh','*',photosc,'_model_sc')
 
@@ -467,7 +468,8 @@ def subract(df_image,psf,shifts=None,width_cfhtsm=0.45,upperlim=0.04,lowerlim=0.
     
     ' correction for the smoothing that was applied to the CFHT'
     ##### Change so default is width_cfhtsm = 0??
-    iraf.gauss('%s'%df_image,'_df_ga',width_cfhtsm)
+    iraf.gauss('_df_sub','_df_ga',width_cfhtsm)
+    # iraf.gauss('%s'%df_image,'_df_ga',width_cfhtsm)
 
     'subtract the model from the dragonfly cutout'
     iraf.imarith('_df_ga','-','_model_sc','_res')
@@ -577,19 +579,14 @@ if __name__ == '__main__':
     width_cfhtsm = parameters_to_use[4]
     width_mask = parameters_to_use[5]
    
-
-    if upperlim_opt is None:
+    
+    if upperlim_opt=='False':
+        print 'Running the entire source subtraction code'
         prep(df_image,hi_res_image,width_mask=width_mask)
         subract(df_image,psf,shifts=shifts,width_cfhtsm=width_cfhtsm,upperlim=upperlim,lowerlim=lowerlim)
     else:
         print 'Only performing the masking on the residual image - _res_org.fits.\n'
         mask('_res_org.fits',upperlim=upperlim_opt)
         
-
-
-    # photosc = getphotosc('_model_sh.fits',df_image)
-  #  print photosc
-    # quit()
-
-    
-    
+        
+        
