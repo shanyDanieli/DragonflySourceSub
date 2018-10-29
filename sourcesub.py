@@ -251,8 +251,8 @@ def getphotosc(model,df,xmin=100,xmax=500,ymin=100,ymax=500,numsources=50):
     # catname_model = run_SExtractor_dual(model,model,detect_thresh=3)
     # catname_df = run_SExtractor_dual(model,df,detect_thresh=3)
 
-    catname_model = run_SExtractor_dual(df,df,detect_thresh=3)
-    catname_df = run_SExtractor_dual(df,model,detect_thresh=3)
+    catname_df = run_SExtractor_dual(df,df,detect_thresh=3)
+    catname_model = run_SExtractor_dual(df,model,detect_thresh=3)
 
     
     'read in the sextractor catalogue from the df run, to pick out some sources'
@@ -273,11 +273,11 @@ def getphotosc(model,df,xmin=100,xmax=500,ymin=100,ymax=500,numsources=50):
     # #print np.transpose([flux,x,y]).tolist()
     
     'pick out some number (numsources) of sources with fluxes close to the median flux'
-    diff = 0.005
+    diff = 0.002
     median_flux = np.median(flux_df)
-    flux_df_nearby = flux_df[(flux_df < (median_flux+diff)) & (flux_df > (median_flux-flux_df))]
+    flux_df_nearby = flux_df[(flux_df < (median_flux+diff)) & (flux_df > (median_flux-diff))]
     while len(flux_df_nearby) < numsources:
-        diff = diff+0.005
+        diff = diff+0.002
         flux_df_nearby = flux_df[(flux_df < (median_flux+diff)) & (flux_df > (median_flux-diff))]
     if verbose:
         print_verbose_string('Selected %s sources with flux close to the median (%s) -- within flux range of %s to %s'%
@@ -285,6 +285,10 @@ def getphotosc(model,df,xmin=100,xmax=500,ymin=100,ymax=500,numsources=50):
     x_nearby = x_df[(flux_df < (median_flux+diff)) & (flux_df > (median_flux-diff))]
     y_nearby = y_df[(flux_df < (median_flux+diff)) & (flux_df > (median_flux-diff))]
     flux_model_nearby = flux_model[(flux_df < (median_flux+diff)) & (flux_df > (median_flux-diff))]
+
+    print(len(x_nearby))
+    print(len(y_nearby))
+    print(len(flux_model_nearby))
 
     #print np.transpose([flux_df_nearby,x_nearby,y_nearby])
     
@@ -335,7 +339,7 @@ def getphotosc(model,df,xmin=100,xmax=500,ymin=100,ymax=500,numsources=50):
         print_verbose_string('The average photosc from %s sources is %s.'%(len(flux_ratio),avgphotosc))
         print_verbose_string('The median photosc from %s sources is %s.'%(len(flux_ratio),medianphotosc))
 
-    return 1./avgphotosc
+    return avgphotosc
 
 
 def writeFITS(im,header,saveas):
@@ -549,33 +553,6 @@ if __name__ == '__main__':
         sys.exit()
     
 
-    #####  Add in reading a file here with the parameters 
-    '''
-    NGC4565:
-    upperlim = 50
-    lowerlim = 0.01
-    photosc = 1.5/2422535.2 (difference between the flux of the star used to make the psf in both frames)
-    shifts = None
-    width_cfhtsm = 0
-    width_mask = 1.5
-    '''
-
-
-    # M101:
-    # upperlim = 0.04
-    # lowerlim = 0.005
-    # photosc = 3.70e-6
-    # photosc = 3.5891251918438935e-06
-    # shifts = [0.15,0.30]
-    # width_cfhtsm = 0.45
-    # width_mask = 1.5
-
-    # zp_df = 19.8545
-    # zp_cfht = 30.0
-    # pix_size_df = 2.5
-    # pix_size_cfht = 0.187
-    # photosc = 1/(10**((zp_df-zp_cfht)/(-2.5))*pix_size_df**2/(pix_size_cfht**2))
-
     'Reading parameters from the user'
     user_parameters = []
     use_or_not = []
@@ -601,19 +578,13 @@ if __name__ == '__main__':
     width_mask = parameters_to_use[5]
    
 
-    # if upperlim is None:
-    #     prep(df_image,hi_res_image,width_mask=width_mask)
-    #     subract(df_image,psf,shifts=shifts,photosc=photosc,width_cfhtsm=width_cfhtsm,upperlim=upperlim,lowerlim=lowerlim)
-    # else:
-    #     print 'Only performing the mask on the residual image .\n'
-    #     mask('_res_org.fits',upperlim=upperlim)
+    if upperlim_opt is None:
+        prep(df_image,hi_res_image,width_mask=width_mask)
+        subract(df_image,psf,shifts=shifts,width_cfhtsm=width_cfhtsm,upperlim=upperlim,lowerlim=lowerlim)
+    else:
+        print 'Only performing the masking on the residual image - _res_org.fits.\n'
+        mask('_res_org.fits',upperlim=upperlim_opt)
         
-    # print(upperlim_opt)
-    # mask('_res_org.fits',upperlim=upperlim_opt)
-
-    prep(df_image,hi_res_image,width_mask=width_mask)
-    # subract(df_image,psf,shifts=shifts,photosc=photosc,width_cfhtsm=width_cfhtsm,upperlim=upperlim,lowerlim=lowerlim)
-    subract(df_image,psf,shifts=shifts,width_cfhtsm=width_cfhtsm,upperlim=upperlim,lowerlim=lowerlim)
 
 
     # photosc = getphotosc('_model_sh.fits',df_image)
