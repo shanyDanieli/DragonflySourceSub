@@ -1,0 +1,24 @@
+    NGC4565:
+    upperlim = 50
+    lowerlim = 0.01
+    photosc = 1.5/2422535.2 (difference between the flux of the star used to make the psf in both frames)
+    shifts = None
+    width_cfhtsm = 0
+    width_mask = 1.5
+    '''
+
+
+    # M101:
+    # upperlim = 0.04
+    # lowerlim = 0.005
+    # photosc = 3.70e-6
+    # photosc = 3.5891251918438935e-06
+    # shifts = [0.15,0.30]
+    # width_cfhtsm = 0.45
+    # width_mask = 1.5
+
+    # zp_df = 19.8545
+    # zp_cfht = 30.0
+    # pix_size_df = 2.5
+    # pix_size_cfht = 0.187
+    # photosc = 1/(10**((zp_df-zp_cfht)/(-2.5))*pix_size_df**2/(pix_size_cfht**2))
