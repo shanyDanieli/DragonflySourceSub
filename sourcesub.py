@@ -18,7 +18,7 @@ Options:
 
 Examples:
     python sourcesub.py -v -s /opt/local/bin/sex -p ./psf/_psf_g_small.fits _df_g.fits _cfht_g.fits NGC4565_param.txt
-    
+    python sourcesub.py -v -s /opt/local/bin/sex -p ./psf/_psf_g.fits _df_g.fits _cfht_g.fits M101_param.txt
 
 """
 
@@ -450,7 +450,7 @@ def psfconv(df_image,psf):
     return None
 
 # def subract(df_image,psf,shifts=None,photosc=3.70e-6,width_cfhtsm=0.45,upperlim=0.04,lowerlim=0.005):
-def subract(df_image,shifts=99.99,width_cfhtsm=0.,upperlim=0.04,lowerlim=0.005,medphotosc=False,numsources=100):
+def subract(df_image,shifts=99.99,width_cfhtsm=0.,upperlim=0.04,lowerlim=0.005,medphotosc=True,numsources=100):
     print "\n************ Running the subtraction steps ************\n"
 
     #iraf.imdel('_psf*.fits')
@@ -615,14 +615,13 @@ if __name__ == '__main__':
     shifts = [parameters_to_use[2],parameters_to_use[3]]
     width_cfhtsm = parameters_to_use[4]
     width_mask = parameters_to_use[5]
-   
-   
+    
    # photosc = getphotosc('_model_sh.fits','_df_sub.fits',xmin=100,xmax=500,ymin=100,ymax=500,numsources=200)
 #    print "Photosc: %s"%photosc
 #    quit()
     
-    subract(df_image,shifts=shifts,width_cfhtsm=width_cfhtsm,upperlim=upperlim,lowerlim=lowerlim,medphotosc=True,numsources=50)
-    quit()
+   # subract(df_image,shifts=shifts,width_cfhtsm=width_cfhtsm,upperlim=upperlim,lowerlim=lowerlim)
+    #quit()
     
     if upperlim_opt=='False':
         print 'Running the entire source subtraction code'
