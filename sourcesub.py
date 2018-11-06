@@ -450,7 +450,7 @@ def psfconv(df_image,psf):
     return None
 
 # def subract(df_image,psf,shifts=None,photosc=3.70e-6,width_cfhtsm=0.45,upperlim=0.04,lowerlim=0.005):
-def subract(df_image,shifts=99.99,width_cfhtsm=0.,upperlim=0.04,lowerlim=0.005,medphotosc=True,numsources=100):
+def subract(df_image,shifts=99.99,width_cfhtsm=0.,upperlim=0.04,medphotosc=True,numsources=100):
     print "\n************ Running the subtraction steps ************\n"
 
     #iraf.imdel('_psf*.fits')
@@ -474,10 +474,11 @@ def subract(df_image,shifts=99.99,width_cfhtsm=0.,upperlim=0.04,lowerlim=0.005,m
             line = datafile.read().split()
             x_shift = float(line[2])
             y_shift = float(line[4])
-        print('The shift in x and y are: '+str(x_shift)+','+str(y_shift))
+        print('Shifting model image by x and y: '+str(x_shift)+','+str(y_shift))
          
         iraf.imshift('_model','_model_sh',0-x_shift,0-y_shift)
     else:
+        print('Shifting model image by x and y: '+str(shifts[0])+','+str(shifts[1]))
         iraf.imshift('_model','_model_sh',shifts[0],shifts[1])
 
     'scale the model so that roughly the same as the _df_sub image'
@@ -519,7 +520,7 @@ def subract(df_image,shifts=99.99,width_cfhtsm=0.,upperlim=0.04,lowerlim=0.005,m
     
     iraf.imcopy('_model_sc.fits','_model_mask.fits')
     iraf.imreplace('_model_mask.fits',0,upper=upperlim)
-    iraf.imreplace('_model_mask.fits',1,lower=lowerlim)
+    iraf.imreplace('_model_mask.fits',1,lower=upperlim/2.)
     iraf.boxcar('_model_mask','_model_maskb',5,5)
     iraf.imreplace('_model_maskb.fits',1,lower=0.1)
     iraf.imreplace('_model_maskb.fits',0,upper=0.9)
@@ -620,14 +621,14 @@ if __name__ == '__main__':
 #    print "Photosc: %s"%photosc
 #    quit()
     
-   # subract(df_image,shifts=shifts,width_cfhtsm=width_cfhtsm,upperlim=upperlim,lowerlim=lowerlim)
-    #quit()
+    subract(df_image,shifts=shifts,width_cfhtsm=width_cfhtsm,upperlim=upperlim)
+    quit()
     
     if upperlim_opt=='False':
         print 'Running the entire source subtraction code'
         prep(df_image,hi_res_image,width_mask=width_mask)
         psfconv(df_image,psf)
-        subract(df_image,shifts=shifts,width_cfhtsm=width_cfhtsm,upperlim=upperlim,lowerlim=lowerlim)
+        subract(df_image,shifts=shifts,width_cfhtsm=width_cfhtsm,upperlim=upperlim)
     else:
         print 'Only performing the masking on the residual image - _res_org.fits.\n'
         mask('_res_org.fits',upperlim=upperlim_opt)
