@@ -1,9 +1,9 @@
 #!/usr/bin/env python
  
-"""starsub.py -- subtract the stars from a dragonfly image using a high resolution image (e.g. cfht) to identify and model stars
+"""sourcesub.py -- subtract the stars from a dragonfly image using a high resolution image (e.g. cfht) to identify and model stars
 
 Usage:
-    starsub [-h] [-v] [-m] [-u UPPERLIMIT] [-l LOCATION] [-p PSF] [-s LOC] <dragonflyimagename> <highresimagename> <paramfile>
+    sourcesub [-h] [-v] [-m] [-u UPPERLIMIT] [-l LOCATION] [-p PSF] [-s LOC] <dragonflyimagename> <highresimagename> <paramfile>
 
 Options:
     -h, --help                                  Show this screen
@@ -17,6 +17,8 @@ Options:
     -s LOC, --sexloc LOC                    	Location of SExtractor executable						[default: /usr/local/bin/sex]
 
 Examples:
+    python sourcesub.py -v -s /opt/local/bin/sex -p ./psf/_psf_g_small.fits _df_g.fits _cfht_g.fits NGC4565_param.txt
+    
 
 """
 
@@ -243,6 +245,7 @@ def run_SExtractor_dual(modelname,imagename,detect_thresh=10):
 
 
 def getphotosc(model,df,xmin=100,xmax=500,ymin=100,ymax=500,numsources=50):
+    print "\n************ Calculating the photometric scaling ************\n"
 
     # 'run source extractor on the Dragonfly image to get the noise (rms) map'
     # run_SExtractor(df,detect_thresh=3)
@@ -299,12 +302,6 @@ def getphotosc(model,df,xmin=100,xmax=500,ymin=100,ymax=500,numsources=50):
     for i in range(len(x_nearby)): 
         f.write('point('+str(x_nearby[i])+','+str(y_nearby[i])+') # point=circle\n')
     f.close()
-
-    #plt.hist(flux,bins=1000)
-    #plt.axvline(x=median_flux,c='r')
-    #plt.xlim(-1,10)
-    #plt.show()
-    #plt.close()
     
     print('flux_df_nearby')
     print(flux_df_nearby)
@@ -314,6 +311,24 @@ def getphotosc(model,df,xmin=100,xmax=500,ymin=100,ymax=500,numsources=50):
     flux_ratio = flux_df_nearby/flux_model_nearby
     avgphotosc = np.mean(flux_ratio)
     medianphotosc = np.median(flux_ratio)
+    
+    plotchecks=True
+    if plotchecks:
+        #print min(flux_ratio)
+        #print max(flux_ratio)
+        numbins = len(flux_ratio)
+        #print 'number of bins: %s'%numbins
+        plt.hist(flux_ratio,bins=numbins)
+        plt.axvline(x=avgphotosc,c='r',label='average')
+        plt.axvline(x=medianphotosc,c='b',label='median')
+        plt.title('Photosc Values')
+        xmax = np.percentile(flux_ratio,95)
+        #print 'plotting max: %s'%xmax
+        plt.xlim(0,xmax)
+        plt.legend()
+        print "Saving histogram of photosc values to photosc_hist.pdf."
+        plt.savefig('photosc_hist.pdf')
+        #plt.show()
 
     # 'open the files'
     # df_data = fits.getdata(df)
@@ -339,7 +354,7 @@ def getphotosc(model,df,xmin=100,xmax=500,ymin=100,ymax=500,numsources=50):
         print_verbose_string('The average photosc from %s sources is %s.'%(len(flux_ratio),avgphotosc))
         print_verbose_string('The median photosc from %s sources is %s.'%(len(flux_ratio),medianphotosc))
 
-    return avgphotosc
+    return avgphotosc,medianphotosc
 
 
 def writeFITS(im,header,saveas):
@@ -353,8 +368,9 @@ def writeFITS(im,header,saveas):
     return None
 
 def prep(df_image,hi_res_image,width_mask=1.5):
-    'run SExtractor to get bright sources that are easily detected in the high resolution data'
+    print "\n************ Running the preparation steps ************\n"
     
+    'run SExtractor to get bright sources that are easily detected in the high resolution data'
     #####  Add in option to change sextractor threshold
     subprocess.call('sex %s' %hi_res_image,shell=True)
     'copy the segmentation map to a mask'
@@ -393,9 +409,11 @@ def prep(df_image,hi_res_image,width_mask=1.5):
 
     return None
 
-# def subract(df_image,psf,shifts=None,photosc=3.70e-6,width_cfhtsm=0.45,upperlim=0.04,lowerlim=0.005):
-def subract(df_image,psf,shifts=99.99,width_cfhtsm=0.45,upperlim=0.04,lowerlim=0.005):
-    iraf.imdel('_model*.fits')
+def psfconv(df_image,psf):
+    print "\n************ Running the psf convolution steps ************\n"
+
+    iraf.imdel('_model.fits')
+    iraf.imdel('_model_4.fits')
     iraf.imdel('_res*.fits')
     iraf.imdel('_psf*.fits')
     iraf.imdel('_df_sub')
@@ -407,7 +425,7 @@ def subract(df_image,psf,shifts=99.99,width_cfhtsm=0.45,upperlim=0.04,lowerlim=0
     except:
         print "WARNING: No BACKVAL to subtract!  Skipping the background subtraction..."
         iraf.imcopy('%s'%df_image,'_df_sub.fits')
-        
+    
     ##### subtract the background from the cfht image?
     
     'convolve the model with the Dragonfly PSF'
@@ -429,7 +447,21 @@ def subract(df_image,psf,shifts=99.99,width_cfhtsm=0.45,upperlim=0.04,lowerlim=0
     'now after the convolution we can go back to the Dragonfly resolution'
     iraf.blkavg('_model_4','_model',4,4,option="average")
     
+    return None
+
+# def subract(df_image,psf,shifts=None,photosc=3.70e-6,width_cfhtsm=0.45,upperlim=0.04,lowerlim=0.005):
+def subract(df_image,shifts=99.99,width_cfhtsm=0.,upperlim=0.04,lowerlim=0.005,medphotosc=False,numsources=100):
+    print "\n************ Running the subtraction steps ************\n"
+
+    #iraf.imdel('_psf*.fits')
+    #iraf.imdel('_model*.fits')
+    #iraf.imdel('_df_sub')
+    iraf.imdel('_res*.fits')
     iraf.imdel('cc_images')
+    iraf.imdel('_model_sh')
+    iraf.imdel('_model_sc')
+    iraf.imdel('_model_mask')
+    iraf.imdel('_model_maskb')
     
     'shift the images so they have the same physical coordinates'
     if shifts[0]==99.99:
@@ -444,8 +476,6 @@ def subract(df_image,psf,shifts=99.99,width_cfhtsm=0.45,upperlim=0.04,lowerlim=0
             y_shift = float(line[4])
         print('The shift in x and y are: '+str(x_shift)+','+str(y_shift))
          
-        iraf.imdel('_model_sh')
-        iraf.imdel('_model_sc')
         iraf.imshift('_model','_model_sh',0-x_shift,0-y_shift)
     else:
         iraf.imshift('_model','_model_sh',shifts[0],shifts[1])
@@ -460,16 +490,24 @@ def subract(df_image,psf,shifts=99.99,width_cfhtsm=0.45,upperlim=0.04,lowerlim=0
         '(perhaps with a correction for the difference in pixel size - depending'
         'on what wregister does - so another factor (PIX_SIZE_DF)^2/(PIX_SIZE_CFHT)^2'
         
-        photosc = getphotosc('_model_sh.fits','_df_sub.fits')
-        print 'photosc: %s'%photosc
+        avgphotosc,medianphotosc = getphotosc('_model_sh.fits','_df_sub.fits',numsources=numsources)
+        if medphotosc:
+            photosc = medianphotosc
+            print 'Using median calculated photosc: %s'%photosc
+        else:
+            photosc = avgphotosc
+            print 'Using average calculated photosc: %s'%photosc
+
         iraf.imarith('_model_sh','*',photosc,'_model_sc')
 
     iraf.imdel('_df_ga.fits')
     
     ' correction for the smoothing that was applied to the CFHT'
-    ##### Change so default is width_cfhtsm = 0??
-    iraf.gauss('_df_sub','_df_ga',width_cfhtsm)
-    # iraf.gauss('%s'%df_image,'_df_ga',width_cfhtsm)
+    if width_cfhtsm != 0:
+        iraf.gauss('_df_sub','_df_ga',width_cfhtsm) # iraf.gauss('%s'%df_image,'_df_ga',width_cfhtsm)
+    else:
+        print 'WARNING: No smoothing applied to the dragonfly image before subtracting the model.'
+        iraf.imcopy('_df_sub.fits','_df_ga.fits')
 
     'subtract the model from the dragonfly cutout'
     iraf.imarith('_df_ga','-','_model_sc','_res')
@@ -479,7 +517,6 @@ def subract(df_image,psf,shifts=99.99,width_cfhtsm=0.45,upperlim=0.04,lowerlim=0
     iraf.imdel('_model_mask')
     iraf.imdel('_model_maskb')
     
-    ##### How do we decide on all these values??
     iraf.imcopy('_model_sc.fits','_model_mask.fits')
     iraf.imreplace('_model_mask.fits',0,upper=upperlim)
     iraf.imreplace('_model_mask.fits',1,lower=lowerlim)
@@ -566,7 +603,7 @@ if __name__ == '__main__':
     	use_or_not.append(int(line.split('\t')[1]))
 
 
-    default_param = [0.04, 0.005, 0.15, 0.30, 0.45, 1.5]
+    default_param = [0.04, 0.005, 0.15, 0.30, 0., 1.5]
     parameters_to_use = np.asarray(default_param)
     
     for i in range(len(default_param)):
@@ -579,11 +616,19 @@ if __name__ == '__main__':
     width_cfhtsm = parameters_to_use[4]
     width_mask = parameters_to_use[5]
    
+   
+   # photosc = getphotosc('_model_sh.fits','_df_sub.fits',xmin=100,xmax=500,ymin=100,ymax=500,numsources=200)
+#    print "Photosc: %s"%photosc
+#    quit()
+    
+    subract(df_image,shifts=shifts,width_cfhtsm=width_cfhtsm,upperlim=upperlim,lowerlim=lowerlim,medphotosc=True,numsources=50)
+    quit()
     
     if upperlim_opt=='False':
         print 'Running the entire source subtraction code'
         prep(df_image,hi_res_image,width_mask=width_mask)
-        subract(df_image,psf,shifts=shifts,width_cfhtsm=width_cfhtsm,upperlim=upperlim,lowerlim=lowerlim)
+        psfconv(df_image,psf)
+        subract(df_image,shifts=shifts,width_cfhtsm=width_cfhtsm,upperlim=upperlim,lowerlim=lowerlim)
     else:
         print 'Only performing the masking on the residual image - _res_org.fits.\n'
         mask('_res_org.fits',upperlim=upperlim_opt)
