@@ -27,6 +27,7 @@ import docopt
 import pyraf
 from pyraf import iraf
 import numpy as np
+from astropy.stats import sigma_clip
 from astropy.io import fits, ascii
 from astropy.nddata.utils import block_replicate
 from matplotlib import pyplot as plt
@@ -244,8 +245,8 @@ def run_SExtractor_dual(modelname,imagename,detect_thresh=10):
 
 
 
-def getphotosc(model,df,xmin=100,xmax=500,ymin=100,ymax=500,numsources=50):
-    print "\n************ Calculating the photometric scaling ************\n"
+def getphotosc(model,df,cutout=False,sigmaclip=False,xmin=100,xmax=600,ymin=100,ymax=400,numsources=50):
+    print "\n**** Calculating the photometric scaling ****\n"
 
     # 'run source extractor on the Dragonfly image to get the noise (rms) map'
     # run_SExtractor(df,detect_thresh=3)
@@ -268,12 +269,19 @@ def getphotosc(model,df,xmin=100,xmax=500,ymin=100,ymax=500,numsources=50):
     cat_model = ascii.read(catname_model)
     flux_model = np.array(cat_model['FLUX_AUTO'])
     
-    # 'restrict the values to an inner section (since the cfht image is smaller than dragonfly)'
-    # flux_df = flux_orig[(x_orig<500)&(x_orig>100)&(y_orig<500)&(y_orig>100)]
-    # x = x_orig[(x_orig<500)&(x_orig>100)&(y_orig<500)&(y_orig>100)]
-    # y = y_orig[(x_orig<500)&(x_orig>100)&(y_orig<500)&(y_orig>100)]
-    # median_flux = np.median(flux)
-    # #print np.transpose([flux,x,y]).tolist()
+    if cutout:
+        'restrict the values to an inner section'
+        flux_orig = flux_df
+        x_orig =x_df
+        y_orig =y_df
+        flux_model_orig = flux_model
+        flux_df = flux_orig[(x_orig<xmax)&(x_orig>xmin)&(y_orig<ymax)&(y_orig>ymin)]
+        x_df = x_orig[(x_orig<xmax)&(x_orig>xmin)&(y_orig<ymax)&(y_orig>ymin)]
+        y_df = y_orig[(x_orig<xmax)&(x_orig>xmin)&(y_orig<ymax)&(y_orig>ymin)]
+        flux_model = flux_model_orig[(x_orig<xmax)&(x_orig>xmin)&(y_orig<ymax)&(y_orig>ymin)]
+
+        print "Restricted the regions considered to x=%s-%s and y=%s-%s, reducing number of detections from %s to %s."\
+                    %(xmin,xmax,ymin,ymax,len(flux_orig),len(flux_df))
     
     'pick out some number (numsources) of sources with fluxes close to the median flux'
     diff = 0.002
@@ -309,26 +317,47 @@ def getphotosc(model,df,xmin=100,xmax=500,ymin=100,ymax=500,numsources=50):
     print(flux_model_nearby)
 
     flux_ratio = flux_df_nearby/flux_model_nearby
-    avgphotosc = np.mean(flux_ratio)
-    medianphotosc = np.median(flux_ratio)
+    avgphotosc_init = np.mean(flux_ratio)
+    medianphotosc_init = np.median(flux_ratio)
+    
+    'use sigma clipping to get to a better median'
+    if sigmaclip:
+        if verbose:
+            print_verbose_string('Using sigma clipping.')
+    filtered_flux_ratio = sigma_clip(flux_ratio, sigma_upper=1,iters=3)
+    filtered_flux_ratio = filtered_flux_ratio.data[~filtered_flux_ratio.mask]
+    
+    avgphotosc = np.mean(filtered_flux_ratio)
+    medianphotosc = np.median(filtered_flux_ratio)
     
     plotchecks=True
     if plotchecks:
         #print min(flux_ratio)
         #print max(flux_ratio)
-        numbins = len(flux_ratio)
         #print 'number of bins: %s'%numbins
-        plt.hist(flux_ratio,bins=numbins)
-        plt.axvline(x=avgphotosc,c='r',label='average')
-        plt.axvline(x=medianphotosc,c='b',label='median')
+        plt.hist(flux_ratio,bins=len(flux_ratio))
+        plt.axvline(x=avgphotosc_init,c='red',label='average',alpha=0.5)
+        plt.axvline(x=medianphotosc_init,c='blue',label='median',alpha=0.5)
+        plt.axvline(x=avgphotosc,c='red',label='average - sigmaclipped')
+        plt.axvline(x=medianphotosc,c='blue',label='median - sigmaclipped')
         plt.title('Photosc Values')
         xmax = np.percentile(flux_ratio,95)
-        #print 'plotting max: %s'%xmax
         plt.xlim(0,xmax)
         plt.legend()
         print "Saving histogram of photosc values to photosc_hist.pdf."
         plt.savefig('photosc_hist.pdf')
-        #plt.show()
+        plt.close()
+        
+        plt.hist(filtered_flux_ratio,bins=len(filtered_flux_ratio)/2)
+        plt.axvline(x=np.mean(filtered_flux_ratio),c='r',label='average')
+        plt.axvline(x=np.median(filtered_flux_ratio),c='b',label='median')
+        plt.title('Photosc Values')
+        xmax = np.percentile(filtered_flux_ratio,95)
+        plt.xlim(0,xmax)
+        plt.legend()
+        print "Saving histogram of sigma clipped photosc values to photosc_hist_filtered.pdf."
+        plt.savefig('photosc_hist_filtered.pdf')
+        plt.close()
 
     # 'open the files'
     # df_data = fits.getdata(df)
@@ -348,13 +377,18 @@ def getphotosc(model,df,xmin=100,xmax=500,ymin=100,ymax=500,numsources=50):
     #print stdev_model
     #print photosc
     
-    'check for any outliers (in case, e.g. the cfht image is smaller than the cutout we took)'
-    
-    if verbose:
-        print_verbose_string('The average photosc from %s sources is %s.'%(len(flux_ratio),avgphotosc))
-        print_verbose_string('The median photosc from %s sources is %s.'%(len(flux_ratio),medianphotosc))
-
-    return avgphotosc,medianphotosc
+    if sigmaclip:
+        if verbose:
+            print_verbose_string('The average photosc from %s sources is %s.'%(len(filtered_flux_ratio),avgphotosc))
+            print_verbose_string('The median photosc from %s sources is %s.'%(len(filtered_flux_ratio),medianphotosc))
+        
+        return avgphotosc,medianphotosc
+    else:
+        if verbose:
+            print_verbose_string('The average photosc from %s sources is %s.'%(len(flux_ratio),avgphotosc_init))
+            print_verbose_string('The median photosc from %s sources is %s.'%(len(flux_ratio),medianphotosc_init))
+        
+        return avgphotosc_init,medianphotosc_init
 
 
 def writeFITS(im,header,saveas):
@@ -378,6 +412,8 @@ def prep(df_image,hi_res_image,width_mask=1.5):
     iraf.imdel('_fluxmod_cfht*.fits')
     iraf.imdel('_df_4*.fits')
 
+    #### Add step to get rid of diffraction spikes
+    
     iraf.imcopy('seg.fits','_mask.fits')
     'replace the values in the segments in the segmentation map (i.e. stars) all to 1, all the background is still 0'
     iraf.imreplace('_mask.fits',1,lower=0.5)
@@ -450,7 +486,7 @@ def psfconv(df_image,psf):
     return None
 
 # def subract(df_image,psf,shifts=None,photosc=3.70e-6,width_cfhtsm=0.45,upperlim=0.04,lowerlim=0.005):
-def subract(df_image,shifts=99.99,width_cfhtsm=0.,upperlim=0.04,medphotosc=True,numsources=100):
+def subract(df_image,shifts=99.99,width_cfhtsm=0.,upperlim=0.04,medphotosc=True,numsources=100,sigmaclip=False,cutout=False):
     print "\n************ Running the subtraction steps ************\n"
 
     #iraf.imdel('_psf*.fits')
@@ -465,7 +501,7 @@ def subract(df_image,shifts=99.99,width_cfhtsm=0.,upperlim=0.04,medphotosc=True,
     
     'shift the images so they have the same physical coordinates'
     if shifts[0]==99.99:
-        print('Calculating shifts...')
+        print('\n**** Calculating shifts... ****\n')
         iraf.stsdas.analysis.dither.crossdriz('_df_sub.fits','_model.fits','cc_images',dinp='no',dref='no')
         iraf.stsdas.analysis.dither.shiftfind('cc_images.fits','shift_values')
         x_shift=0
@@ -482,28 +518,27 @@ def subract(df_image,shifts=99.99,width_cfhtsm=0.,upperlim=0.04,medphotosc=True,
         iraf.imshift('_model','_model_sh',shifts[0],shifts[1])
 
     'scale the model so that roughly the same as the _df_sub image'
-    if usemodelpsf:
-        iraf.imarith('_model_sh','/',16.,'_model_sc')
+#    if usemodelpsf:
+#        iraf.imarith('_model_sh','/',16.,'_model_sc')
+#    else:
+    'the photometric step, matching the images to each other. '
+    'in principle this comes from the headers - both datasets are calibrated,'
+    'so this multiplication should be something like 10^((ZP_DF - ZP_CFHT)/-2.5)'
+    '(perhaps with a correction for the difference in pixel size - depending'
+    'on what wregister does - so another factor (PIX_SIZE_DF)^2/(PIX_SIZE_CFHT)^2'
+    
+    avgphotosc,medianphotosc = getphotosc('_model_sh.fits','_df_sub.fits',numsources=numsources,sigmaclip=sigmaclip,cutout=cutout)
+    if medphotosc:
+        photosc = medianphotosc
+        print 'Using median calculated photosc: %s'%photosc
     else:
-        'the photometric step, matching the images to each other. '
-        'in principle this comes from the headers - both datasets are calibrated,'
-        'so this multiplication should be something like 10^((ZP_DF - ZP_CFHT)/-2.5)'
-        '(perhaps with a correction for the difference in pixel size - depending'
-        'on what wregister does - so another factor (PIX_SIZE_DF)^2/(PIX_SIZE_CFHT)^2'
-        
-        avgphotosc,medianphotosc = getphotosc('_model_sh.fits','_df_sub.fits',numsources=numsources)
-        if medphotosc:
-            photosc = medianphotosc
-            print 'Using median calculated photosc: %s'%photosc
-        else:
-            photosc = avgphotosc
-            print 'Using average calculated photosc: %s'%photosc
-
-        iraf.imarith('_model_sh','*',photosc,'_model_sc')
+        photosc = avgphotosc
+        print 'Using average calculated photosc: %s'%photosc
+    iraf.imarith('_model_sh','*',photosc,'_model_sc')
 
     iraf.imdel('_df_ga.fits')
     
-    ' correction for the smoothing that was applied to the CFHT'
+    'correction for the smoothing that was applied to the CFHT'
     if width_cfhtsm != 0:
         iraf.gauss('_df_sub','_df_ga',width_cfhtsm) # iraf.gauss('%s'%df_image,'_df_ga',width_cfhtsm)
     else:
@@ -513,25 +548,18 @@ def subract(df_image,shifts=99.99,width_cfhtsm=0.,upperlim=0.04,medphotosc=True,
     'subtract the model from the dragonfly cutout'
     iraf.imarith('_df_ga','-','_model_sc','_res')
 
+    'duplicate the residual so that we can redo the masking step later'
     iraf.imcopy('_res.fits','_res_org.fits')
 
-    iraf.imdel('_model_mask')
-    iraf.imdel('_model_maskb')
-    
-    iraf.imcopy('_model_sc.fits','_model_mask.fits')
-    iraf.imreplace('_model_mask.fits',0,upper=upperlim)
-    iraf.imreplace('_model_mask.fits',1,lower=upperlim/2.)
-    iraf.boxcar('_model_mask','_model_maskb',5,5)
-    iraf.imreplace('_model_maskb.fits',1,lower=0.1)
-    iraf.imreplace('_model_maskb.fits',0,upper=0.9)
-    iraf.imarith(1,'-','_model_maskb','_model_maskb')
-    iraf.imarith('_model_maskb','*','_res','_res_final')
+    'mask the image to get block out stuff that didnt subtract nicely'
+    mask('_res',upperlim=upperlim)
 
     return None
 
 def mask(res_org,upperlim=0.04):
+    print "\n**** Masking the residual, using upperlim of %s ****\n" % upperlim
+
     upperlim = float(upperlim)
-    lowerlim_opt = upperlim/2
 
     iraf.imdel('_res_final.fits')
     iraf.imdel('_model_mask')
@@ -539,7 +567,7 @@ def mask(res_org,upperlim=0.04):
     
     iraf.imcopy('_model_sc.fits','_model_mask.fits')
     iraf.imreplace('_model_mask.fits',0,upper=upperlim)
-    iraf.imreplace('_model_mask.fits',1,lower=lowerlim_opt)
+    iraf.imreplace('_model_mask.fits',1,lower=upperlim/2.)
     iraf.boxcar('_model_mask','_model_maskb',5,5)
     iraf.imreplace('_model_maskb.fits',1,lower=0.1)
     iraf.imreplace('_model_maskb.fits',0,upper=0.9)
@@ -617,18 +645,18 @@ if __name__ == '__main__':
     width_cfhtsm = parameters_to_use[4]
     width_mask = parameters_to_use[5]
     
-   # photosc = getphotosc('_model_sh.fits','_df_sub.fits',xmin=100,xmax=500,ymin=100,ymax=500,numsources=200)
-#    print "Photosc: %s"%photosc
-#    quit()
+  #  avgphotosc,medianphotosc = getphotosc('_model_sh.fits','_df_sub.fits',numsources=100,cutout=True,sigmaclip=True)
+  #  print "Photosc: %s, %s"%(avgphotosc,medianphotosc)
+  #  quit()
     
-    subract(df_image,shifts=shifts,width_cfhtsm=width_cfhtsm,upperlim=upperlim)
-    quit()
+  #  subract(df_image,shifts=shifts,width_cfhtsm=width_cfhtsm,upperlim=upperlim,sigmaclip=True,cutout=True)
+  #  quit()
     
     if upperlim_opt=='False':
         print 'Running the entire source subtraction code'
         prep(df_image,hi_res_image,width_mask=width_mask)
         psfconv(df_image,psf)
-        subract(df_image,shifts=shifts,width_cfhtsm=width_cfhtsm,upperlim=upperlim)
+        subract(df_image,shifts=shifts,width_cfhtsm=width_cfhtsm,upperlim=upperlim,sigmaclip=True,cutout=True)
     else:
         print 'Only performing the masking on the residual image - _res_org.fits.\n'
         mask('_res_org.fits',upperlim=upperlim_opt)
