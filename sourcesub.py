@@ -13,11 +13,12 @@ Options:
     -l LOCATION, --locpsf LOCATION              Directory where the psf code is [default: /Users/deblokhorst/Documents/Dragonfly/git/]
     -u UPPERLIMIT, --upperlimit UPPERLIMIT      Uses a different upper limit for the final masking   [default: False]
 
-    -p PSF, --givenpsf PSF                      PSF  name  [default: ./psf/_psf_g.fits]
+    -p PSF, --givenpsf PSF                      PSF  name  [default: None]
     -s LOC, --sexloc LOC                    	Location of SExtractor executable						[default: /usr/local/bin/sex]
 
 Examples:
     python sourcesub.py -v -s /opt/local/bin/sex -p ./psf/_psf_g_small.fits _df_g.fits _cfht_g.fits NGC4565_param.txt
+    python sourcesub.py -v -s /opt/local/bin/sex -l /Users/lokhorst/Documents/Dragonfly/ -m _df_g.fits _cfht_g.fits NGC4565_param.txt
     python sourcesub.py -v -s /opt/local/bin/sex -p ./psf/_psf_g.fits _df_g.fits _cfht_g.fits M101_param.txt
 
 """
@@ -645,18 +646,18 @@ if __name__ == '__main__':
     width_cfhtsm = parameters_to_use[4]
     width_mask = parameters_to_use[5]
     
-  #  avgphotosc,medianphotosc = getphotosc('_model_sh.fits','_df_sub.fits',numsources=100,cutout=True,sigmaclip=True)
+  #  avgphotosc,medianphotosc = getphotosc('_model_sh.fits','_df_sub.fits',numsources=100,cutout=False,sigmaclip=False)
   #  print "Photosc: %s, %s"%(avgphotosc,medianphotosc)
   #  quit()
     
-  #  subract(df_image,shifts=shifts,width_cfhtsm=width_cfhtsm,upperlim=upperlim,sigmaclip=True,cutout=True)
+  #  subract(df_image,shifts=shifts,width_cfhtsm=width_cfhtsm,upperlim=upperlim,sigmaclip=False,cutout=True)
   #  quit()
     
     if upperlim_opt=='False':
         print 'Running the entire source subtraction code'
         prep(df_image,hi_res_image,width_mask=width_mask)
         psfconv(df_image,psf)
-        subract(df_image,shifts=shifts,width_cfhtsm=width_cfhtsm,upperlim=upperlim,sigmaclip=True,cutout=True)
+        subract(df_image,shifts=shifts,width_cfhtsm=width_cfhtsm,upperlim=upperlim,sigmaclip=False,cutout=False)
     else:
         print 'Only performing the masking on the residual image - _res_org.fits.\n'
         mask('_res_org.fits',upperlim=upperlim_opt)
