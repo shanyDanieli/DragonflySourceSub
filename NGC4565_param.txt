@@ -1,0 +1,13 @@
+# upperlim
+# lowerlim
+# x shift
+# y shift
+# width cfhtsm
+# width mask
+
+50	1
+0.01	1
+99.99	1
+99.99	1
+0	1
+1.5	1
