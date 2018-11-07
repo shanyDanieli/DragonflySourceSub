@@ -4,6 +4,8 @@
 # y shift
 # width cfhtsm
 # width mask
+# sigmaclip
+# cutout
 
 0.04	1
 0.005	1
@@ -11,3 +13,5 @@
 0.30	1
 0.45	1
 1.5	1
+0	1
+0	1

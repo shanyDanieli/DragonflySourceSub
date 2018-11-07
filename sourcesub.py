@@ -627,37 +627,38 @@ if __name__ == '__main__':
     use_or_not = []
     with open(parameters_file,'r') as i:
         lines = i.readlines()
-    for ind in range(7,len(lines)):
+    for ind in range(9,len(lines)):
     	line = lines[ind]
     	user_parameters.append(float(line.split('\t')[0]))
     	use_or_not.append(int(line.split('\t')[1]))
-
-
-    default_param = [0.04, 0.005, 0.15, 0.30, 0., 1.5]
-    parameters_to_use = np.asarray(default_param)
     
+    default_param = [0.04, 0.005, 0.15, 0.30, 0., 1.5, 0, 0]
+    parameters_to_use = np.asarray(default_param)
+
     for i in range(len(default_param)):
     	if use_or_not[i] == 1:
     		parameters_to_use[i] = user_parameters[i]
-
+    
     upperlim = parameters_to_use[0]
     lowerlim = parameters_to_use[1]
     shifts = [parameters_to_use[2],parameters_to_use[3]]
     width_cfhtsm = parameters_to_use[4]
     width_mask = parameters_to_use[5]
+    sigmaclip = bool(parameters_to_use[6])
+    cutout = bool(parameters_to_use[7])
     
   #  avgphotosc,medianphotosc = getphotosc('_model_sh.fits','_df_sub.fits',numsources=100,cutout=False,sigmaclip=False)
   #  print "Photosc: %s, %s"%(avgphotosc,medianphotosc)
   #  quit()
     
-  #  subract(df_image,shifts=shifts,width_cfhtsm=width_cfhtsm,upperlim=upperlim,sigmaclip=False,cutout=True)
+  #  subract(df_image,shifts=shifts,width_cfhtsm=width_cfhtsm,upperlim=upperlim,sigmaclip=True,cutout=True)
   #  quit()
     
     if upperlim_opt=='False':
         print 'Running the entire source subtraction code'
         prep(df_image,hi_res_image,width_mask=width_mask)
         psfconv(df_image,psf)
-        subract(df_image,shifts=shifts,width_cfhtsm=width_cfhtsm,upperlim=upperlim,sigmaclip=False,cutout=False)
+        subract(df_image,shifts=shifts,width_cfhtsm=width_cfhtsm,upperlim=upperlim,sigmaclip=sigmaclip,cutout=cutout)
     else:
         print 'Only performing the masking on the residual image - _res_org.fits.\n'
         mask('_res_org.fits',upperlim=upperlim_opt)
