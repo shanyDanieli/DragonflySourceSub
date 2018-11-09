@@ -3,7 +3,7 @@
 """sourcesub.py -- subtract the stars from a dragonfly image using a high resolution image (e.g. cfht) to identify and model stars
 
 Usage:
-    sourcesub [-h] [-v] [-m] [-u UPPERLIMIT] [-l LOCATION] [-p PSF] [-s LOC] <dragonflyimagename> <highresimagename> <paramfile>
+    sourcesub [-h] [-v] [-m] [-g] [-u UPPERLIMIT] [-l LOCATION] [-p PSF] [-s LOC] <dragonflyimagename> <highresimagename> <paramfile>
 
 Options:
     -h, --help                                  Show this screen
@@ -12,6 +12,7 @@ Options:
     -m, --usemodelpsf                           Use the model psf (produced via allison's code) [default: False]
     -l LOCATION, --locpsf LOCATION              Directory where the psf code is [default: /Users/deblokhorst/Documents/Dragonfly/git/]
     -u UPPERLIMIT, --upperlimit UPPERLIMIT      Uses a different upper limit for the final masking   [default: False]
+    -g, --unmaskgal                             Trigger if want to unmask a galaxy/source in the field (so not subtracted) [default: False]
 
     -p PSF, --givenpsf PSF                      PSF  name  [default: None]
     -s LOC, --sexloc LOC                    	Location of SExtractor executable						[default: /usr/local/bin/sex]
@@ -95,6 +96,42 @@ sextractor_config = """
         VERBOSE_TYPE {verbose_type}
 """
 
+sextractor_config_2 = """
+    ANALYSIS_THRESH {analysis_thresh}
+        BACK_FILTERSIZE 3
+        BACKPHOTO_TYPE GLOBAL
+        BACK_SIZE {back_size}
+        CATALOG_NAME test.cat
+        CATALOG_TYPE ASCII_HEAD
+        CLEAN Y
+        CLEAN_PARAM 1.
+        DEBLEND_MINCONT .005
+        DEBLEND_NTHRESH 32
+        DETECT_MINAREA {detect_minarea}
+        DETECT_THRESH {detect_thresh}
+        DETECT_TYPE CCD
+        FILTER Y
+        FILTER_NAME {filter_name}
+        FLAG_IMAGE flag.fits
+        GAIN 1.0
+        MAG_GAMMA 4.
+        MAG_ZEROPOINT 0.0
+        MASK_TYPE CORRECT
+        MEMORY_BUFSIZE 4096
+        MEMORY_OBJSTACK 30000
+        MEMORY_PIXSTACK 3000000
+        PARAMETERS_NAME {parameters_name}
+        PHOT_APERTURES {phot_apertures}
+        PHOT_AUTOPARAMS 2.5, 3.5
+        PIXEL_SCALE {pixel_scale}
+        SATUR_LEVEL 50000.
+        SEEING_FWHM 2.5
+        STARNNW_NAME {starnnw_name}
+        VERBOSE_TYPE {verbose_type}
+        WEIGHT_TYPE {weight_type}
+        WEIGHT_IMAGE {weight_image}
+        WEIGHT_THRESH 0
+"""
 
 default_conv = """CONV NORM
 # 3x3 ``all-ground'' convolution mask with FWHM = 2 pixels. 
@@ -148,18 +185,18 @@ def cleanit(fname,iama='file'):
         shutil.rmtree(fname)
     return None
 
-def run_SExtractor(imagename,detect_thresh=10):
+def run_SExtractor(imagename,pixscale=2.5,detect_thresh=10,back_size=128,detect_minarea=5,analysis_thresh=3,phot_apertures=3,weight_image='NONE',weight_type='NONE',num=''):
     'Names and storage directory of required config files'
-    sextractor_config_name = './pipetmp/scamp.sex'
-    params_name = './pipetmp/scamp.param'
-    nnw_name = './pipetmp/default.nnw'
-    conv_name = './pipetmp/default.conv'
+    sextractor_config_name = './pipetmp/scamp2.sex'
+    params_name = './pipetmp/scamp2.param'
+    nnw_name = './pipetmp/default2.nnw'
+    conv_name = './pipetmp/default2.conv'
     mkdirp('./pipetmp')
 
     'Output ascii catalog name and seg map name'
-    catname = re.sub('.fits','.cat',imagename)
-    segname = re.sub('.fits','_seg.fits',imagename)
-    rmsname = re.sub('.fits','_rms.fits',imagename)
+    catname = re.sub('.fits','_2.cat',imagename)
+    segname = re.sub('.fits','_seg_2.fits',imagename)
+    rmsname = re.sub('.fits','_rms_2.fits',imagename)
 
     if verbose:
         verbose_type = 'NORMAL'
@@ -167,14 +204,17 @@ def run_SExtractor(imagename,detect_thresh=10):
         verbose_type = 'QUIET'
 
     'Stick content in config files'
-    configs = zip([sextractor_config_name,params_name,conv_name,nnw_name],[sextractor_config,sextractor_params,default_conv,default_nnw])
+    configs = zip([sextractor_config_name,params_name,conv_name,nnw_name],[sextractor_config_2,sextractor_params,default_conv,default_nnw])
     for fname,fcontent in configs:
         fout = open(fname,'w')
 
-        if 'scamp.sex' in fname:
+        if 'scamp2.sex' in fname:
             fout.write(fcontent.format(filter_name=conv_name,parameters_name=params_name,
                                        starnnw_name=nnw_name,verbose_type=verbose_type,
-                                       detect_thresh=detect_thresh,pixel_scale=2.5))
+                                       detect_thresh=detect_thresh,pixel_scale=pixscale,
+                                       analysis_thresh=analysis_thresh,back_size=back_size,
+                                       detect_minarea=detect_minarea,phot_apertures=phot_apertures,
+                                       weight_image=weight_image,weight_type=weight_type))
         else:
             fout.write(fcontent)
 
@@ -191,7 +231,7 @@ def run_SExtractor(imagename,detect_thresh=10):
     for fname in [sextractor_config_name,params_name,nnw_name,conv_name]:
         cleanit(fname)
 
-    return catname
+    return segname
 
 
 def run_SExtractor_dual(modelname,imagename,detect_thresh=10):
@@ -395,6 +435,8 @@ def getphotosc(model,df,cutout=False,sigmaclip=False,xmin=100,xmax=600,ymin=100,
 def writeFITS(im,header,saveas):
     if os.path.isfile(saveas):
         os.remove(saveas)
+    if verbose:
+        print_verbose_string('Writing data to file %s.'%saveas)
     hdu = fits.PrimaryHDU(data=im,header=header)
     hdulist = fits.HDUList([hdu])
     hdulist.writeto(saveas,overwrite=True)
@@ -402,20 +444,73 @@ def writeFITS(im,header,saveas):
 
     return None
 
-def prep(df_image,hi_res_image,width_mask=1.5):
-    print "\n************ Running the preparation steps ************\n"
+def unmaskgalaxy(segdata,segname,segrefname=None,segref=None,galvalues=None):
+    if segrefname is None:
+        print "no segrefname"
+        segrefname = segname
+    if segref is None:
+        print "no segrefdata"
+        segref = segdata
     
-    'run SExtractor to get bright sources that are easily detected in the high resolution data'
-    #####  Add in option to change sextractor threshold
-    subprocess.call('sex %s' %hi_res_image,shell=True)
-    'copy the segmentation map to a mask'
+    if verbose:
+        print_verbose_string('Working on unmasking galaxy from segmentation map %s...' % segname)
+    if galvalues is None:
+        values_string = raw_input('\nWhich values in the segmentation map (%s) correspond to the galaxy (comma separated)? '%segrefname)
+        if len(values_string)>0:
+            galvalues = [int(value) for value in values_string.split(',')]
+        else:
+            print 'No values entered, exiting.'
+            return segdata
+
+    'Keep the segments of those values unmasked'
+    for value in galvalues:
+        if verbose:
+            print_verbose_string('Not masking segment of value %s...'%value)
+        segdata[segref==value]=0
+
+    return segdata
+
+def prep(df_image,hi_res_image,width_mask=1.5,unmaskgal=False,galvalues = None):
+    print "\n************ Running the preparation steps ************\n"
     iraf.imdel('_mask.fits')
     iraf.imdel('_fluxmod_cfht*.fits')
     iraf.imdel('_df_4*.fits')
-
-    #### Add step to get rid of diffraction spikes
     
+    'run SExtractor to get bright sources that are easily detected in the high resolution data'
+    subprocess.call('sex %s'%hi_res_image,shell=True)    #####  Add in option to change sextractor threshold detect_thresh and analysis_thresh 2/3
+    'copy the segmentation map to a mask'
     iraf.imcopy('seg.fits','_mask.fits')
+
+    ##### Add step to get rid of diffraction spikes
+
+    if unmaskgal:
+        'Run SExtractor to get values for the central galaxy'
+        print '\nDoing a second sextractor run to unmask central galaxy. \n'
+        analysis_thresh_lg=2;back_size_lg=128;detect_thresh_lg=2;detect_minarea_lg=60 #         galvalues = [3031,3030,3029,3535,1858]
+        #analysis_thresh_lg=2;back_size_lg=128;detect_thresh_lg=6;detect_minarea_lg=60 #         galvalues = [921,923,924,1411,1868,1466,1969,1933,683]
+        segname = run_SExtractor(hi_res_image,detect_thresh=detect_thresh_lg,analysis_thresh=analysis_thresh_lg,back_size=back_size_lg,detect_minarea=detect_minarea_lg)
+        print '\nSegmentation map is named: '+segname
+        
+        'Open up the data'
+        seg2data = fits.getdata(segname)
+        segdata,segheader = fits.getdata('_mask.fits',header=True)
+        
+        'Detect sources from the segmentation map'
+        from photutils import detect_sources
+        segrefdata = detect_sources(seg2data, 3, npixels=5)#, filter_kernel=kernel) 
+        segrefdata = segrefdata.data
+        segrefname = re.sub('.fits','_ds.fits',segname)
+        writeFITS(segrefdata,segheader,segrefname)    
+        print '\nSource separated segmentation map is named: '+segrefname
+        
+        'Use detected source seg map to mask galaxies' #galvalues = [3531,5444,5496]
+        print 'Unmask the galaxies in the mask from the original segmap. \n'
+        segdatanew = unmaskgalaxy(segdata,'_mask.fits',segrefname=segrefname,segref=segrefdata,galvalues=galvalues)        
+        writeFITS(segdatanew,segheader,'_mask.fits')
+        
+    if verbose:
+        print_verbose_string('Carrying on')
+        
     'replace the values in the segments in the segmentation map (i.e. stars) all to 1, all the background is still 0'
     iraf.imreplace('_mask.fits',1,lower=0.5)
     'multiply the mask (with 1s at the stars) by the high res image to get the star flux back - now have the flux model'
@@ -603,6 +698,7 @@ if __name__ == '__main__':
     verbose = arguments['--verbose']
     usemodelpsf = arguments['--usemodelpsf']
     upperlim_opt = arguments['--upperlimit']
+    unmaskgal = arguments['--unmaskgal']
     
     # Non-mandatory options with arguments
     psf = arguments['--givenpsf']
@@ -621,7 +717,6 @@ if __name__ == '__main__':
         print 'ERROR: If not using a model psf from Allisons code, need to specify the name of the psf fits file to be used.\n'
         sys.exit()
     
-
     'Reading parameters from the user'
     user_parameters = []
     use_or_not = []
@@ -656,7 +751,7 @@ if __name__ == '__main__':
     
     if upperlim_opt=='False':
         print 'Running the entire source subtraction code'
-        prep(df_image,hi_res_image,width_mask=width_mask)
+        prep(df_image,hi_res_image,width_mask=width_mask,unmaskgal=unmaskgal)
         psfconv(df_image,psf)
         subract(df_image,shifts=shifts,width_cfhtsm=width_cfhtsm,upperlim=upperlim,sigmaclip=sigmaclip,cutout=cutout)
     else:
