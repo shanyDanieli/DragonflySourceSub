@@ -47,6 +47,7 @@ import os
 import sys
 import subprocess
 import re
+import scipy
 
 
 
@@ -486,8 +487,7 @@ def prep(df_image,hi_res_image,width_mask=1.5,unmaskgal=False,galvalues = None):
     if unmaskgal:
         'Run SExtractor to get values for the central galaxy'
         print '\nDoing a second sextractor run to unmask central galaxy. \n'
-        analysis_thresh_lg=2;back_size_lg=128;detect_thresh_lg=2;detect_minarea_lg=60 #         galvalues = [3031,3030,3029,3535,1858]
-        #analysis_thresh_lg=2;back_size_lg=128;detect_thresh_lg=6;detect_minarea_lg=60 #         galvalues = [921,923,924,1411,1868,1466,1969,1933,683]
+        analysis_thresh_lg=2;back_size_lg=128;detect_thresh_lg=2;detect_minarea_lg=60
         segname = run_SExtractor(hi_res_image,detect_thresh=detect_thresh_lg,analysis_thresh=analysis_thresh_lg,back_size=back_size_lg,detect_minarea=detect_minarea_lg)
         print '\nSegmentation map is named: '+segname
         
@@ -573,11 +573,23 @@ def psfconv(df_image,psf):
     
     'this is just to retain the same total flux in the psf'
     iraf.imarith('_psf_4','*',16.,'_psf_4')
-
+    
+    'Convolve with the psf'
+    # from scipy import signal
+    # fluxmoddata,fluxmodheader = fits.getdata('_fluxmod_dragonfly.fits',header=True)
+    # psfdata = fits.getdata('_psf_4.fits')
+    # fluxmodheader['COMMENT']='convolved with '+'_psf_4.fits'
+    # modeldata = signal.fftconvolve(fluxmoddata, psfdata)
+    # print ""
+    # print fluxmoddata.shape
+    # print modeldata.shape
+    # print ""
+    # writeFITS(modeldata,fluxmodheader,'_model_4.fits')
     iraf.stsdas.analysis.fourier.fconvolve('_fluxmod_dragonfly','_psf_4','_model_4')
     
     'now after the convolution we can go back to the Dragonfly resolution'
     iraf.blkavg('_model_4','_model',4,4,option="average")
+    
     
     return None
 
